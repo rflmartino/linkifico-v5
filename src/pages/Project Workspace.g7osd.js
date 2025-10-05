@@ -1,5 +1,63 @@
 // Project Workspace Page - Velo Frontend
-// Handles project workspace functionality - receives userId and projectId from URL
+// NEW IMPLEMENTATION: Railway Backend Test
+// Starting fresh - no backwards compatibility
+
+import { testRailwayConnection } from 'backend/railway-api.web.js';
+import { logToBackend } from 'backend/utils/webLogger.web.js';
+
+// Simple logger for Railway test
+function logRailwayTest(operation, data = null) {
+    const timestamp = new Date().toLocaleTimeString();
+    console.log(`[${timestamp}] 🚂 Railway Test - ${operation}`, data || '');
+    logToBackend('Railway-Test', operation, data);
+}
+
+$w.onReady(async function () {
+    logRailwayTest('page_load', { 
+        message: 'Starting Railway backend test',
+        timestamp: new Date().toISOString()
+    });
+
+    // Test Railway connection
+    try {
+        logRailwayTest('testing_connection', { 
+            url: 'https://linkifico-v5-production.up.railway.app',
+            message: 'Testing connection to Railway backend...'
+        });
+
+        const result = await testRailwayConnection();
+        
+        logRailwayTest('connection_result', result);
+        
+        if (result.success) {
+            logRailwayTest('success', { 
+                message: 'Railway connection successful!',
+                data: result.data
+            });
+        } else {
+            logRailwayTest('failed', { 
+                message: 'Railway connection failed',
+                error: result.error
+            });
+        }
+        
+    } catch (error) {
+        logRailwayTest('error', { 
+            message: 'Railway test error',
+            error: error.message
+        });
+    }
+
+    logRailwayTest('page_ready', { 
+        message: 'Railway test completed',
+        timestamp: new Date().toISOString()
+    });
+});
+
+/* 
+// ========================================
+// OLD IMPLEMENTATION - COMMENTED OUT
+// ========================================
 
 import { processUserRequest, testBackend } from 'backend/entrypoint.web.js';
 import wixLocation from 'wix-location';
@@ -418,3 +476,4 @@ $w.onReady(async function () {
     }
 
 });
+*/
