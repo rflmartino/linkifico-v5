@@ -2,7 +2,7 @@
 // NEW IMPLEMENTATION: Railway Backend Test
 // Starting fresh - no backwards compatibility
 
-import { fetch } from 'wix-fetch';
+import { testRailwayConnection } from 'backend/railway-api.web.js';
 import { logToBackend } from 'backend/utils/webLogger.web.js';
 
 // Simple logger for Railway test
@@ -18,30 +18,28 @@ $w.onReady(async function () {
         timestamp: new Date().toISOString()
     });
 
-    // Test Railway connection directly with wix-fetch
+    // Test Railway connection via backend function
     try {
         logRailwayTest('testing_connection', { 
             url: 'https://linkifico-v5-production.up.railway.app',
             message: 'Testing connection to Railway backend...'
         });
+
+        const result = await testRailwayConnection();
         
-        const response = await fetch('https://linkifico-v5-production.up.railway.app/health', {
-            method: 'GET',
-            headers: {
-                'Content-Type': 'application/json'
-            }
-        });
+        logRailwayTest('connection_result', result);
         
-        if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
+        if (result.success) {
+            logRailwayTest('success', { 
+                message: 'Railway connection successful!',
+                data: result.data
+            });
+        } else {
+            logRailwayTest('failed', { 
+                message: 'Railway connection failed',
+                error: result.error
+            });
         }
-        
-        const data = await response.json();
-        
-        logRailwayTest('success', { 
-            message: 'Railway connection successful!',
-            data: data
-        });
         
     } catch (error) {
         logRailwayTest('error', { 
