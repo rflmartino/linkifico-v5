@@ -21,7 +21,6 @@ $w.onReady(async function () {
     // Test Railway connection via backend function
     try {
         logRailwayTest('testing_connection', { 
-            url: 'https://linkifico-v5-production.up.railway.app',
             message: 'Testing connection to Railway backend...'
         });
 
