@@ -1,18 +1,27 @@
-import axios from 'axios';
+import { fetch } from 'wix-fetch';
 
 const RAILWAY_URL = 'https://linkifico-v5-production.up.railway.app';
 
 // Test Railway connection - Web Method
 export async function testRailwayConnection() {
     try {
-        const response = await axios.get(`${RAILWAY_URL}/health`, {
-            timeout: 10000
+        const response = await fetch(`${RAILWAY_URL}/health`, {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json'
+            }
         });
+        
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        const data = await response.json();
         
         return {
             success: true,
             message: 'Railway connection successful',
-            data: response.data,
+            data: data,
             timestamp: new Date().toISOString()
         };
     } catch (error) {
@@ -28,19 +37,24 @@ export async function testRailwayConnection() {
 // Analyze project via Railway - Web Method
 export async function analyzeProjectViaRailway(projectData) {
     try {
-        const response = await axios.post(`${RAILWAY_URL}/api/analyze-project`, {
-            projectData
-        }, {
-            timeout: 15000,
+        const response = await fetch(`${RAILWAY_URL}/api/analyze-project`, {
+            method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
-            }
+            },
+            body: JSON.stringify({ projectData })
         });
+        
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        const data = await response.json();
         
         return {
             success: true,
             message: 'Analysis completed via Railway',
-            data: response.data,
+            data: data,
             timestamp: new Date().toISOString()
         };
     } catch (error) {
@@ -56,24 +70,28 @@ export async function analyzeProjectViaRailway(projectData) {
 // Generic Railway API call - Web Method
 export async function callRailwayAPI(endpoint, method = 'GET', data = null) {
     try {
-        const config = {
+        const fetchConfig = {
             method,
-            url: `${RAILWAY_URL}${endpoint}`,
-            timeout: 15000,
             headers: {
                 'Content-Type': 'application/json'
             }
         };
         
         if (data) {
-            config.data = data;
+            fetchConfig.body = JSON.stringify(data);
         }
         
-        const response = await axios(config);
+        const response = await fetch(`${RAILWAY_URL}${endpoint}`, fetchConfig);
+        
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        const responseData = await response.json();
         
         return {
             success: true,
-            data: response.data,
+            data: responseData,
             timestamp: new Date().toISOString()
         };
     } catch (error) {
