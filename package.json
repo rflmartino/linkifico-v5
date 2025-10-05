@@ -1,0 +1,34 @@
+{
+  "devDependencies": {
+    "@wix/cli": "^1.0.0",
+    "@wix/eslint-plugin-cli": "^1.0.0",
+    "eslint": "^8.25.0",
+    "react": "16.14.0"
+  },
+  "dependencies": {
+    "frappe-gantt": "1.0.3",
+    "xstate": "5.20.2",
+    "compromise-match2": "1.2.0",
+    "autogpt": "0.0.1",
+    "autogpt-node": "0.1.0",
+    "openai": "5.15.0",
+    "compromise-dates": "3.7.1",
+    "zod": "4.1.0",
+    "compromise-paragraphs": "0.1.0",
+    "supports-color": "^9.4.0",
+    "graphlib": "2.1.8",
+    "@anthropic-ai/sdk": "0.59.0",
+    "compromise": "14.14.4",
+    "compromise-numbers": "1.4.0",
+    "redis": "5.8.2",
+    "@wix/site-realtime": "1.19.0",
+    "node-nlp": "^4.27.0",
+    "@pinecone-database/pinecone": "6.1.2",
+    "nodemailer": "7.0.5"
+  },
+  "scripts": {
+    "postinstall": "wix sync-types",
+    "dev": "wix dev",
+    "lint": "eslint ."
+  }
+}
