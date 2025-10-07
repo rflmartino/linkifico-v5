@@ -12,9 +12,24 @@ class Logger {
             }
         }
         if (error) {
-            message += ` ERROR: ${error.message || error}`;
+            // Serialize error properly to avoid [object Object]
+            let errorMsg;
+            if (typeof error === 'object') {
+                if (error.message) {
+                    errorMsg = error.message;
+                } else {
+                    try {
+                        errorMsg = JSON.stringify(error);
+                    } catch (_) {
+                        errorMsg = '[unserializable error]';
+                    }
+                }
+            } else {
+                errorMsg = String(error);
+            }
+            message += ` ERROR: ${errorMsg}`;
             console.error(message);
-            if (error.stack) console.error('STACK:', error.stack);
+            if (error && error.stack) console.error('STACK:', error.stack);
         } else {
             console.log(message);
         }

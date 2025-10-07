@@ -92,7 +92,8 @@ async function processJobMessageViaRailway(job) {
         
         if (!response.ok) {
             const errorText = await response.text();
-            Logger.error('entrypoint', 'railway_process_message_error', { 
+            const errorMsg = `HTTP ${response.status}: ${response.statusText}`;
+            Logger.error('entrypoint', 'railway_process_message_error', new Error(errorMsg), { 
                 jobId: job.id, 
                 status: response.status,
                 statusText: response.statusText,
@@ -112,9 +113,8 @@ async function processJobMessageViaRailway(job) {
         
         return data.result || null;
     } catch (error) {
-        Logger.error('entrypoint', 'railway_process_message_exception', { 
-            jobId: job.id,
-            error: error.message
+        Logger.error('entrypoint', 'railway_process_message_exception', error, { 
+            jobId: job.id
         });
         return null;
     }
@@ -450,7 +450,7 @@ export async function processJob(jobId) {
         const job = await getJobFromRailway(jobId);
         
         if (!job) {
-            Logger.error('entrypoint', 'processJob_jobNotFound', { jobId });
+            Logger.error('entrypoint', 'processJob_jobNotFound', new Error('Job not found'), { jobId });
             return;
         }
         
@@ -503,10 +503,8 @@ export async function processJob(jobId) {
         });
         
     } catch (error) {
-        Logger.error('entrypoint', 'processJob_error', { 
-            jobId, 
-            error: error.message,
-            stack: error.stack
+        Logger.error('entrypoint', 'processJob_error', error, { 
+            jobId
         });
         
         // Mark job as failed in Railway backend
