@@ -1,62 +1,5 @@
 // Project Workspace Page - Velo Frontend
-// NEW IMPLEMENTATION: Railway Backend Test
-// Starting fresh - no backwards compatibility
-
-import { testRailwayConnection } from 'backend/railway-api.web.js';
-import { logToBackend } from 'backend/utils/webLogger.web.js';
-
-// Simple logger for Railway test
-function logRailwayTest(operation, data = null) {
-    const timestamp = new Date().toLocaleTimeString();
-    console.log(`[${timestamp}] 🚂 Railway Test - ${operation}`, data || '');
-    logToBackend('Railway-Test', operation, data);
-}
-
-$w.onReady(async function () {
-    logRailwayTest('page_load', { 
-        message: 'Starting Railway backend test',
-        timestamp: new Date().toISOString()
-    });
-
-    // Test Railway connection via backend function
-    try {
-        logRailwayTest('testing_connection', { 
-            message: 'Testing connection to Railway backend...'
-        });
-
-        const result = await testRailwayConnection();
-        
-        logRailwayTest('connection_result', result);
-        
-        if (result.success) {
-            logRailwayTest('success', { 
-                message: 'Railway connection successful!',
-                data: result.data
-            });
-        } else {
-            logRailwayTest('failed', { 
-                message: 'Railway connection failed',
-                error: result.error
-            });
-        }
-        
-    } catch (error) {
-        logRailwayTest('error', { 
-            message: 'Railway test error',
-            error: error.message
-        });
-    }
-
-    logRailwayTest('page_ready', { 
-        message: 'Railway test completed',
-        timestamp: new Date().toISOString()
-    });
-});
-
-/* 
-// ========================================
-// OLD IMPLEMENTATION - COMMENTED OUT
-// ========================================
+// Updated for Railway Backend Integration with Job Queue System
 
 import { processUserRequest, testBackend } from 'backend/entrypoint.web.js';
 import wixLocation from 'wix-location';
@@ -76,14 +19,13 @@ $w.onReady(async function () {
     // Get projectId from URL parameters (or generate new one)
     const projectId = wixLocation.query.projectId || generateNewProjectId();
     
-    // Hardcoded test user for testing job queue system
+    // Hardcoded test user for testing
     const TEST_USER_ID = 'test_user_123';
     
     logHandshake('page_load', { 
         projectId, 
         userId: TEST_USER_ID, 
-        isNewProject: !wixLocation.query.projectId,
-        testingMode: true
+        isNewProject: !wixLocation.query.projectId
     });
 
     // Test backend connectivity
@@ -100,33 +42,16 @@ $w.onReady(async function () {
         session.setItem('chatSessionId', sessionId);
     }
 
-	// Check for existing project and chat history
-	let isNewSession = false;
-	let existingHistory = [];
-	let isNewProject = false;
-	
-	try {
-		// For job queue system, we don't need to load existing data on page load
-		// The job queue will handle all data loading when processing jobs
-		existingHistory = [];
-		isNewSession = true;
-		
-        const projectJustCreated = isProjectJustCreated();
-        isNewProject = true; // Always treat as new project for job queue system
-        
-        // No need to update page elements on load - job queue will handle this
-	} catch (e) {
-		logHandshake('backend_check_error', { error: e.message });
-	}
+    // For new implementation, we start fresh each session
+    let isNewSession = true;
+    let isNewProject = !wixLocation.query.projectId;
 
-	chatEl.onMessage(async (event) => {
+    chatEl.onMessage(async (event) => {
         const data = (event && event.data) || {};
         const action = data.action;
 
         if (action === 'ready') {
-            // For job queue system, project info will be updated when jobs complete
-            // No need to fetch status on ready
-            logHandshake('ready', 'status_ready', { projectId, userId: TEST_USER_ID });
+            logHandshake('chat_ready', { projectId, userId: TEST_USER_ID });
             
             chatEl.postMessage({
                 action: 'initialize',
@@ -136,71 +61,17 @@ $w.onReady(async function () {
                 projectName: 'New Project'
             });
             
-            // Project email will be updated when jobs complete
-            
-            // Send appropriate content based on session type
+            // Send welcome message for new projects
             setTimeout(async () => {
                 if (isNewProject) {
-                    // Handle new project - show user message if exists
-                    if (existingHistory.length > 0) {
-                        const userMessage = existingHistory.find(msg => msg.role === 'user');
-                        if (userMessage) {
-                            chatEl.postMessage({
-                                action: 'displayMessage',
-                                type: 'user',
-                                content: userMessage.message,
-                                timestamp: userMessage.timestamp
-                            });
-                        }
-                    }
-                    
-                    chatEl.postMessage({ action: 'updateStatus', status: 'ready' });
-                    
-                    // No need to poll for AI response - job queue will handle this
-                } else if (isNewSession) {
-                    // Send welcome message for new sessions
                     chatEl.postMessage({
                         action: 'displayMessage',
                         type: 'assistant',
-                        content: '👋 **Welcome to your AI Project Assistant!**\n\nI\'ll help you create a comprehensive project plan by asking about your objectives, budget, timeline, and team.\n\n💡 **Just tell me about your project** - for example: "I need a plan for opening a coffee shop" or "Help me plan a website redesign"',
+                        content: '👋 **Welcome to your AI Project Manager!**\n\nI\'ll help you create and manage your project with specialized agents for:\n\n🎯 **Scope Definition** - Define objectives and deliverables\n📅 **Scheduling** - Create tasks with timelines\n✅ **Task Management** - Update progress and track completion\n💰 **Budget Tracking** - Monitor costs and spending\n📊 **Project Analysis** - Assess health and identify gaps\n\n💡 **Just tell me about your project** - for example:\n- "I need to create a toy store project"\n- "Add tasks for the development phase"\n- "What\'s the current project status?"',
                         timestamp: new Date().toISOString()
                     });
-                } else {
-                    // Load existing chat history for returning users
-                    chatEl.postMessage({
-                        action: 'loadHistory',
-                        history: existingHistory
-                    });
-                    
-                    // Extract and display todos from chat history
-                    setTimeout(async () => {
-                        try {
-                            const todosFromHistory = [];
-                            
-                            existingHistory.forEach(msg => {
-                                if (msg.role === 'assistant' && msg.analysis && msg.analysis.todos) {
-                                    todosFromHistory.push(...msg.analysis.todos);
-                                }
-                                if (msg.role === 'assistant' && msg.analysis && msg.analysis.gaps && msg.analysis.gaps.todos) {
-                                    todosFromHistory.push(...msg.analysis.gaps.todos);
-                                }
-                            });
-                            
-                            const uniqueTodos = todosFromHistory.filter((todo, index, self) => 
-                                index === self.findIndex(t => t.id === todo.id)
-                            );
-                            
-                            if (uniqueTodos.length > 0) {
-                                chatEl.postMessage({
-                                    action: 'displayTodos',
-                                    todos: uniqueTodos
-                                });
-                            }
-                        } catch (error) {
-                            logHandshake('todos_extraction_error', { error: error.message });
-                        }
-                    }, 500);
                 }
+                chatEl.postMessage({ action: 'updateStatus', status: 'ready' });
             }, 300);
             return;
         }
@@ -215,7 +86,7 @@ $w.onReady(async function () {
             return;
         }
 
-		if (action === 'sendMessage') {
+        if (action === 'sendMessage') {
             const userMessage = (data.message || '').trim();
             if (!userMessage) return;
 
@@ -229,8 +100,8 @@ $w.onReady(async function () {
 
             chatEl.postMessage({ action: 'updateStatus', status: 'processing' });
 
-            // Submit job to queue using new job queue system
-            logHandshake('sendMessage', 'submittingJob', { 
+            // Submit job to queue using job queue system
+            logHandshake('submitting_job', { 
                 projectId, 
                 userId: TEST_USER_ID, 
                 messageLength: userMessage.length 
@@ -248,9 +119,7 @@ $w.onReady(async function () {
             }).catch(() => ({ success: false }));
 
             if (!job || !job.success) {
-                logHandshake('sendMessage', 'jobSubmissionFailed', { 
-                    projectId, 
-                    userId: TEST_USER_ID, 
+                logHandshake('job_submission_failed', { 
                     error: job?.message || 'Unknown error' 
                 });
                 chatEl.postMessage({ 
@@ -263,17 +132,12 @@ $w.onReady(async function () {
                 return;
             }
 
-            logHandshake('sendMessage', 'jobSubmitted', { 
-                projectId, 
-                userId: TEST_USER_ID, 
-                jobId: job.jobId 
-            });
+            logHandshake('job_submitted', { jobId: job.jobId });
 
             // Poll for job results
             pollForJobResults(job.jobId);
         }
     });
-
 
     // Generate new project ID for new projects
     function generateNewProjectId() {
@@ -282,7 +146,7 @@ $w.onReady(async function () {
         return `proj_${timestamp}_${randomId}`;
     }
 
-    // Poll for job results - new job queue system
+    // Poll for job results - job queue system
     async function pollForJobResults(jobId) {
         const maxAttempts = 45; // 45 attempts = 90 seconds max
         let attempts = 0;
@@ -290,26 +154,23 @@ $w.onReady(async function () {
         const intervalMs = 2000;
         const timeoutMs = 90000;
 
-        logHandshake('pollForJobResults', 'start', { jobId, maxAttempts, intervalMs, timeoutMs });
+        logHandshake('polling_start', { jobId, maxAttempts });
 
         const poll = async () => {
             attempts++;
             
             try {
-                logHandshake('pollForJobResults', 'polling', { jobId, attempt: attempts, elapsed: Date.now() - startedAt });
-                
                 const results = await processUserRequest({
                     op: 'getJobResults',
                     payload: { jobId: jobId }
                 }).catch((error) => {
-                    logHandshake('pollForJobResults', 'getJobResults_error', { jobId, error: error.message });
+                    logHandshake('polling_error', { jobId, error: error.message });
                     return null;
                 });
                 
                 if (!results) {
-                    logHandshake('pollForJobResults', 'no_results', { jobId, attempts, elapsed: Date.now() - startedAt });
                     if (Date.now() - startedAt > timeoutMs) {
-                        logHandshake('pollForJobResults', 'timeout', { jobId, attempts, duration: Date.now() - startedAt });
+                        logHandshake('polling_timeout', { jobId, attempts });
                         chatEl.postMessage({
                             action: 'displayMessage',
                             type: 'system',
@@ -323,75 +184,113 @@ $w.onReady(async function () {
                     return;
                 }
                 
-                logHandshake('pollForJobResults', 'got_results', { 
-                    jobId, 
-                    attempts, 
-                    results: JSON.stringify(results, null, 2),
-                    elapsed: Date.now() - startedAt 
-                });
-                
-                logHandshake('pollForJobResults', 'statusCheck', { 
+                logHandshake('polling_status', { 
                     jobId, 
                     attempts, 
                     status: results.status, 
-                    progress: results.progress || 0,
-                    elapsed: Date.now() - startedAt 
+                    progress: results.progress || 0
                 });
                 
-                // Update status based on job status to show proper animations
+                // Update status based on job status
                 if (results.status === 'queued') {
-                    chatEl.postMessage({ action: 'updateStatus', status: 'processing' });
+                    chatEl.postMessage({ action: 'updateStatus', status: 'queued' });
                 } else if (results.status === 'processing') {
-                    // Use the message from the job status as the status
-                    const statusMessage = results.message || 'Processing...';
-                    chatEl.postMessage({ action: 'updateStatus', status: statusMessage.toLowerCase().replace(/\s+/g, '_') });
+                    chatEl.postMessage({ action: 'updateStatus', status: 'processing' });
                 } else if (results.status === 'failed') {
                     chatEl.postMessage({ action: 'updateStatus', status: 'error' });
                 }
                 
                 if (results.status === 'completed') {
-                    logHandshake('pollForJobResults', 'completed', { 
+                    logHandshake('job_completed', { 
                         jobId, 
                         attempts, 
-                        duration: Date.now() - startedAt,
-                        hasResults: !!results.results,
-                        resultKeys: results.results ? Object.keys(results.results) : []
+                        duration: Date.now() - startedAt
                     });
                     
-                    // Display complete results
-                    chatEl.postMessage({
-                        action: 'displayMessage',
-                        type: 'assistant',
-                        content: results.results.aiResponse,
-                        timestamp: new Date().toISOString()
-                    });
-                    
-                    // Display todos if available
-                    if (Array.isArray(results.results.todos) && results.results.todos.length) {
-                        logHandshake('pollForJobResults', 'displayingTodos', { jobId, todoCount: results.results.todos.length });
+                    // Display AI response
+                    if (results.results?.aiResponse) {
                         chatEl.postMessage({
-                            action: 'displayTodos',
-                            todos: results.results.todos
+                            action: 'displayMessage',
+                            type: 'assistant',
+                            content: results.results.aiResponse,
+                            timestamp: new Date().toISOString()
                         });
                     }
                     
-                    // Update project name if it changed
-                    if (results.results.projectData?.name && results.results.projectData.name !== 'New Project') {
-                        logHandshake('pollForJobResults', 'updatingProjectName', { jobId, projectName: results.results.projectData.name });
-                        chatEl.postMessage({ 
-                            action: 'updateProjectName', 
-                            projectName: results.results.projectData.name 
-                        });
-                        await updatePageTitle(results.results.projectData.name);
+                    // Display project data if available
+                    if (results.results?.projectData) {
+                        const projectData = results.results.projectData;
+                        
+                        // Update project name
+                        if (projectData.name && projectData.name !== 'Untitled Project') {
+                            chatEl.postMessage({ 
+                                action: 'updateProjectName', 
+                                projectName: projectData.name 
+                            });
+                            updatePageTitle(projectData.name);
+                        }
+                        
+                        // Display scope if available
+                        if (projectData.scope && projectData.scope.description) {
+                            chatEl.postMessage({
+                                action: 'displayMessage',
+                                type: 'system',
+                                content: `📋 **Project Scope:** ${projectData.scope.description}`,
+                                timestamp: new Date().toISOString()
+                            });
+                        }
+                        
+                        // Display stages if available
+                        if (projectData.stages && projectData.stages.length > 0) {
+                            const stagesText = projectData.stages
+                                .map(s => `${s.order}. ${s.name} (${s.status})`)
+                                .join('\n');
+                            chatEl.postMessage({
+                                action: 'displayMessage',
+                                type: 'system',
+                                content: `📊 **Project Stages:**\n${stagesText}`,
+                                timestamp: new Date().toISOString()
+                            });
+                        }
+                        
+                        // Display tasks if available
+                        if (projectData.tasks && projectData.tasks.length > 0) {
+                            const tasksText = projectData.tasks
+                                .map(t => `- ${t.title} (${t.status})`)
+                                .join('\n');
+                            chatEl.postMessage({
+                                action: 'displayMessage',
+                                type: 'system',
+                                content: `✅ **Tasks:**\n${tasksText}`,
+                                timestamp: new Date().toISOString()
+                            });
+                        }
+                        
+                        // Display budget if available
+                        if (projectData.budget && projectData.budget.total > 0) {
+                            chatEl.postMessage({
+                                action: 'displayMessage',
+                                type: 'system',
+                                content: `💰 **Budget:** ${projectData.budget.currency} ${projectData.budget.total.toLocaleString()} (Spent: ${projectData.budget.spent.toLocaleString()})`,
+                                timestamp: new Date().toISOString()
+                            });
+                        }
                     }
                     
-                    // Update project email if available
-                    if (results.results.projectData?.email) {
-                        logHandshake('pollForJobResults', 'updatingProjectEmail', { jobId, projectEmail: results.results.projectData.email });
-                        chatEl.postMessage({ 
-                            action: 'updateProjectEmail', 
-                            projectEmail: results.results.projectData.email 
-                        });
+                    // Display analysis if available
+                    if (results.results?.analysis) {
+                        const analysis = results.results.analysis;
+                        if (analysis.gaps && analysis.gaps.length > 0) {
+                            const gapsText = analysis.gaps
+                                .map(g => `- ${g.description} (${g.severity})`)
+                                .join('\n');
+                            chatEl.postMessage({
+                                action: 'displayMessage',
+                                type: 'system',
+                                content: `⚠️ **Gaps Identified:**\n${gapsText}`,
+                                timestamp: new Date().toISOString()
+                            });
+                        }
                     }
                     
                     chatEl.postMessage({ action: 'updateStatus', status: 'ready' });
@@ -399,10 +298,8 @@ $w.onReady(async function () {
                 }
                 
                 if (results.status === 'failed') {
-                    logHandshake('pollForJobResults', 'failed', { 
+                    logHandshake('job_failed', { 
                         jobId, 
-                        attempts, 
-                        duration: Date.now() - startedAt, 
                         error: results.message 
                     });
                     chatEl.postMessage({
@@ -419,7 +316,7 @@ $w.onReady(async function () {
                 if (attempts < maxAttempts) {
                     setTimeout(poll, intervalMs);
                 } else {
-                    logHandshake('pollForJobResults', 'maxAttemptsReached', { jobId, attempts, duration: Date.now() - startedAt });
+                    logHandshake('polling_max_attempts', { jobId, attempts });
                     chatEl.postMessage({
                         action: 'displayMessage',
                         type: 'system',
@@ -430,7 +327,7 @@ $w.onReady(async function () {
                 }
                 
             } catch (error) {
-                logHandshake('pollForJobResults', 'error', { jobId, attempts, error: error.message });
+                logHandshake('polling_error', { jobId, error: error.message });
                 chatEl.postMessage({ action: 'updateStatus', status: 'ready' });
             }
         };
@@ -451,28 +348,4 @@ $w.onReady(async function () {
             logHandshake('page_title_error', { error: error.message });
         }
     }
-
-    // Function to update page elements for returning users
-    async function updatePageElements(projectStatus) {
-        try {
-            if (projectStatus?.projectData?.name) {
-                await updatePageTitle(projectStatus.projectData.name);
-            }
-        } catch (error) {
-            logHandshake('page_elements_error', { error: error.message });
-        }
-    }
-
-    // Helper function to determine if project was just created
-    function isProjectJustCreated() {
-        // Check if projectId has recent timestamp (within last 30 seconds)
-        const projectTimestamp = projectId.split('_')[1]; // Extract timestamp from proj_TIMESTAMP_randomId
-        if (projectTimestamp) {
-            const timeDiff = Date.now() - parseInt(projectTimestamp);
-            return timeDiff < 30000; // Less than 30 seconds ago
-        }
-        return false;
-    }
-
 });
-*/
