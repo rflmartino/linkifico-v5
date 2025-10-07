@@ -91,10 +91,12 @@ async function processJobMessageViaRailway(job) {
         );
         
         if (!response.ok) {
+            const errorText = await response.text();
             Logger.error('entrypoint', 'railway_process_message_error', { 
                 jobId: job.id, 
                 status: response.status,
-                statusText: response.statusText
+                statusText: response.statusText,
+                errorBody: errorText
             });
             return null;
         }

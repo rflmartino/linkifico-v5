@@ -14,15 +14,33 @@ export async function supervisorAgent(state) {
 Your role:
 - Analyze incoming requests about projects
 - Decide which specialized agent should handle the request
-- Route to: 'analyzer', 'planner', 'updater', 'communicator', or 'end'
-- Provide clear reasoning for your decision
+- Route to the appropriate agent or answer directly if it's a general question
 
-Current project context: ${JSON.stringify(projectData || {})}
+Available agents:
+- 'scope': Define project scope, objectives, deliverables, create stages
+- 'scheduler': Create detailed tasks under stages with timelines and dependencies
+- 'taskUpdater': Update existing tasks, mark complete, handle delays
+- 'budget': Track costs, manage budget, flag overruns
+- 'analyzer': Analyze project completeness, identify gaps
+- 'end': Finish workflow (use for general questions or when done)
+
+Current project context: ${JSON.stringify(projectData || {}, null, 2)}
+
+Examples:
+- "Create a toy store project" → 'scope' (needs scope definition)
+- "Add tasks for website development" → 'scheduler' (needs task creation)
+- "Mark homepage design complete" → 'taskUpdater' (updating existing task)
+- "We spent $5k on inventory" → 'budget' (budget update)
+- "What's missing from this project?" → 'analyzer' (gap analysis)
+- "What is PRINCE2?" → 'end' (general question, answer directly)
+
+For general questions not requiring project modification, answer directly and route to 'end'.
 
 Respond with JSON only:
 {
-  "next_agent": "analyzer|planner|updater|communicator|end",
-  "reasoning": "why this agent should handle it"
+  "next_agent": "scope|scheduler|taskUpdater|budget|analyzer|end",
+  "reasoning": "why this agent should handle it",
+  "direct_answer": "optional: answer if general question"
 }`;
 
   const response = await model.invoke([
@@ -32,9 +50,18 @@ Respond with JSON only:
 
   let decision;
   try {
-    decision = JSON.parse(response.content);
+    const cleanContent = response.content
+      .replace(/```json\n?/g, "")
+      .replace(/```\n?/g, "")
+      .trim();
+    decision = JSON.parse(cleanContent);
   } catch (e) {
-    decision = { next_agent: "end", reasoning: "Failed to parse decision" };
+    console.error("Failed to parse supervisor decision:", e);
+    decision = { 
+      next_agent: "end", 
+      reasoning: "Failed to parse decision",
+      direct_answer: response.content 
+    };
   }
 
   return {
@@ -42,5 +69,6 @@ Respond with JSON only:
     messages: [...messages, { role: "assistant", content: response.content }],
     next_agent: decision.next_agent,
     reasoning: decision.reasoning,
+    direct_answer: decision.direct_answer || null,
   };
 }
