@@ -9,16 +9,52 @@
 // import { portfolioController } from './controllers/portfolioController.js';
 import { Permissions, webMethod } from 'wix-web-module';
 import { fetch } from 'wix-fetch';
+import { getSecret } from 'wix-secrets-backend';
 import { Logger } from './utils/logger.js';
 import { getTemplate } from './templates/templatesRegistry.js';
 
+// ============================================================================
+// SECURITY: API KEY MANAGEMENT
+// ============================================================================
+
+// Cache the API key to avoid multiple secret reads
+let cachedApiKey = null;
+
+async function getRailwayApiKey() {
+    if (cachedApiKey) {
+        return cachedApiKey;
+    }
+    
+    try {
+        cachedApiKey = await getSecret('RAILWAY_API_KEY');
+        if (!cachedApiKey) {
+            Logger.error('entrypoint', 'getRailwayApiKey', new Error('RAILWAY_API_KEY not found in secrets'));
+            throw new Error('Railway API key not configured');
+        }
+        return cachedApiKey;
+    } catch (error) {
+        Logger.error('entrypoint', 'getRailwayApiKey', error);
+        throw new Error('Failed to retrieve Railway API key');
+    }
+}
+
+// Helper to create authenticated headers
+async function getAuthenticatedHeaders() {
+    const apiKey = await getRailwayApiKey();
+    return {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey
+    };
+}
+
 // Railway API helper functions for job queue operations
 async function storeJobInRailway(job) {
+    const headers = await getAuthenticatedHeaders();
     const response = await fetch(
         'https://linkifico-v5-production.up.railway.app/api/store-job',
         {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: headers,
             body: JSON.stringify({ job })
         }
     );
@@ -26,20 +62,25 @@ async function storeJobInRailway(job) {
 }
 
 async function getJobFromRailway(jobId) {
+    const headers = await getAuthenticatedHeaders();
     const response = await fetch(
         `https://linkifico-v5-production.up.railway.app/api/get-job/${jobId}`,
-        { method: 'GET' }
+        { 
+            method: 'GET',
+            headers: headers
+        }
     );
     const data = await response.json();
     return data.job || null;
 }
 
 async function updateJobStatusInRailway(jobId, status, progress, message) {
+    const headers = await getAuthenticatedHeaders();
     const response = await fetch(
         'https://linkifico-v5-production.up.railway.app/api/update-job-status',
         {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: headers,
             body: JSON.stringify({ jobId, status, progress, message })
         }
     );
@@ -47,11 +88,12 @@ async function updateJobStatusInRailway(jobId, status, progress, message) {
 }
 
 async function saveJobResultsInRailway(jobId, results) {
+    const headers = await getAuthenticatedHeaders();
     const response = await fetch(
         'https://linkifico-v5-production.up.railway.app/api/save-job-results',
         {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: headers,
             body: JSON.stringify({ jobId, results })
         }
     );
@@ -59,18 +101,26 @@ async function saveJobResultsInRailway(jobId, results) {
 }
 
 async function getJobResultsFromRailway(jobId) {
+    const headers = await getAuthenticatedHeaders();
     const response = await fetch(
         `https://linkifico-v5-production.up.railway.app/api/get-job-results/${jobId}`,
-        { method: 'GET' }
+        { 
+            method: 'GET',
+            headers: headers
+        }
     );
     const data = await response.json();
     return data.results || null;
 }
 
 async function getQueuedJobsFromRailway(limit) {
+    const headers = await getAuthenticatedHeaders();
     const response = await fetch(
         `https://linkifico-v5-production.up.railway.app/api/get-queued-jobs?limit=${limit}`,
-        { method: 'GET' }
+        { 
+            method: 'GET',
+            headers: headers
+        }
     );
     const data = await response.json();
     return data.jobs || [];
@@ -81,11 +131,12 @@ async function processJobMessageViaRailway(job) {
     try {
         Logger.info('entrypoint', 'railway_process_message_start', { jobId: job.id });
         
+        const headers = await getAuthenticatedHeaders();
         const response = await fetch(
             'https://linkifico-v5-production.up.railway.app/api/process-message-job',
             {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: headers,
                 body: JSON.stringify({ job })
             }
         );
@@ -121,11 +172,12 @@ async function processJobMessageViaRailway(job) {
 }
 
 async function processJobInitViaRailway(job) {
+    const headers = await getAuthenticatedHeaders();
     const response = await fetch(
         'https://linkifico-v5-production.up.railway.app/api/process-init-job',
         {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: headers,
             body: JSON.stringify({ job })
         }
     );
@@ -134,11 +186,12 @@ async function processJobInitViaRailway(job) {
 }
 
 async function processJobAnalyzeViaRailway(job) {
+    const headers = await getAuthenticatedHeaders();
     const response = await fetch(
         'https://linkifico-v5-production.up.railway.app/api/process-analyze-job',
         {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: headers,
             body: JSON.stringify({ job })
         }
     );
@@ -162,13 +215,12 @@ export const analyzeProject = webMethod(
                 projectId: projectData?.projectId 
             });
             
+            const headers = await getAuthenticatedHeaders();
             const response = await fetch(
                 'https://linkifico-v5-production.up.railway.app/api/analyze-project',
                 {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
+                    headers: headers,
                     body: JSON.stringify({
                         query: "Analyze this project for completeness and risks",
                         projectData: projectData

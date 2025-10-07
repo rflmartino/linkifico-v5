@@ -9,23 +9,71 @@ dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 8080;
+const API_KEY = process.env.RAILWAY_API_KEY;
 
-// Middleware
+// ============================================================================
+// SECURITY MIDDLEWARE
+// ============================================================================
+
+// API Key Authentication Middleware
+function authenticateApiKey(req, res, next) {
+  // Skip authentication for health check
+  if (req.path === '/health') {
+    return next();
+  }
+
+  const providedKey = req.headers['x-api-key'];
+  
+  if (!API_KEY) {
+    console.error('⚠️ WARNING: API_KEY not set in environment variables!');
+    console.error('⚠️ API is currently UNSECURED. Set API_KEY immediately!');
+    return next(); // Allow requests but log warning
+  }
+  
+  if (!providedKey) {
+    console.warn('🔒 Unauthorized request - No API key provided');
+    return res.status(401).json({ 
+      success: false,
+      error: 'Unauthorized - API key required',
+      message: 'Include x-api-key header with your request'
+    });
+  }
+  
+  if (providedKey !== API_KEY) {
+    console.warn('🔒 Unauthorized request - Invalid API key');
+    return res.status(401).json({ 
+      success: false,
+      error: 'Unauthorized - Invalid API key'
+    });
+  }
+  
+  // API key is valid
+  next();
+}
+
+// ============================================================================
+// MIDDLEWARE
+// ============================================================================
+
 app.use(cors());
 app.use(express.json());
+
+// Apply API key authentication to all /api/* routes
+app.use('/api/*', authenticateApiKey);
 
 // In-memory job storage (should use Redis in production, but using memory for now)
 const jobs = new Map();
 const jobResults = new Map();
 
-// Health check endpoint
+// Health check endpoint (public - no auth required)
 app.get('/health', (req, res) => {
   res.json({ 
     status: 'ok', 
     message: 'PMaaS Railway Backend with LangGraph is running',
     timestamp: new Date().toISOString(),
     langgraph: 'enabled',
-    jobsInQueue: jobs.size
+    jobsInQueue: jobs.size,
+    secured: !!API_KEY // Indicates if API key is configured
   });
 });
 
