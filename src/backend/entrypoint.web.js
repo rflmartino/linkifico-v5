@@ -78,16 +78,44 @@ async function getQueuedJobsFromRailway(limit) {
 
 // Job processing functions that call Railway backend
 async function processJobMessageViaRailway(job) {
-    const response = await fetch(
-        'https://linkifico-v5-production.up.railway.app/api/process-message-job',
-        {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ job })
+    try {
+        Logger.info('entrypoint', 'railway_process_message_start', { jobId: job.id });
+        
+        const response = await fetch(
+            'https://linkifico-v5-production.up.railway.app/api/process-message-job',
+            {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ job })
+            }
+        );
+        
+        if (!response.ok) {
+            Logger.error('entrypoint', 'railway_process_message_error', { 
+                jobId: job.id, 
+                status: response.status,
+                statusText: response.statusText
+            });
+            return null;
         }
-    );
-    const data = await response.json();
-    return data.result || null;
+        
+        const data = await response.json();
+        
+        Logger.info('entrypoint', 'railway_process_message_complete', { 
+            jobId: job.id,
+            hasResult: !!data.result,
+            success: data.success,
+            dataKeys: Object.keys(data)
+        });
+        
+        return data.result || null;
+    } catch (error) {
+        Logger.error('entrypoint', 'railway_process_message_exception', { 
+            jobId: job.id,
+            error: error.message
+        });
+        return null;
+    }
 }
 
 async function processJobInitViaRailway(job) {
