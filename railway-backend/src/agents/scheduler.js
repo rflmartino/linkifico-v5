@@ -3,6 +3,7 @@
 
 import { ChatAnthropic } from "@langchain/anthropic";
 import { getProjectData, saveProjectData } from '../data/projectData.js';
+import { parseResponseContent } from './parseResponse.js';
 
 const model = new ChatAnthropic({
   modelName: "claude-3-5-haiku-20241022",
@@ -75,17 +76,14 @@ CRITICAL: Respond with ONLY valid JSON. No text before or after.`;
     // Parse response
     let schedulerData;
     try {
-      const cleanContent = response.content
-        .replace(/```json\n?/g, "")
-        .replace(/```\n?/g, "")
-        .trim();
-      schedulerData = JSON.parse(cleanContent);
+      schedulerData = parseResponseContent(response);
     } catch (e) {
       console.error("Failed to parse scheduler response:", e);
       return {
         ...state,
         error: "Failed to parse scheduler data",
-        rawResponse: response.content
+        rawResponse: response.content,
+        next_agent: "end"
       };
     }
 

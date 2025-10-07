@@ -50,17 +50,26 @@ Respond with JSON only:
 
   let decision;
   try {
-    const cleanContent = response.content
+    // Handle content as string or array
+    let contentText = typeof response.content === 'string' 
+      ? response.content 
+      : (Array.isArray(response.content) && response.content.length > 0)
+        ? response.content[0].text || JSON.stringify(response.content)
+        : JSON.stringify(response.content);
+    
+    const cleanContent = contentText
       .replace(/```json\n?/g, "")
       .replace(/```\n?/g, "")
       .trim();
     decision = JSON.parse(cleanContent);
   } catch (e) {
     console.error("Failed to parse supervisor decision:", e);
+    console.error("Response content type:", typeof response.content);
+    console.error("Response content:", response.content);
     decision = { 
       next_agent: "end", 
       reasoning: "Failed to parse decision",
-      direct_answer: response.content 
+      direct_answer: "I encountered an error processing your request. Please try again."
     };
   }
 
