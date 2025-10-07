@@ -77,30 +77,71 @@ workflow.addNode("budget", budgetAgent);
 function routeFromSupervisor(state) {
   const nextAgent = state.next_agent;
   
-  console.log(`🔀 Routing to: ${nextAgent}`);
+  console.log(`🔀 Routing from supervisor to: ${nextAgent}`);
   
-  if (nextAgent === "end") {
+  if (!nextAgent || nextAgent === "end" || nextAgent === "supervisor") {
+    console.log(`⚠️ Invalid or end routing: ${nextAgent}, ending workflow`);
     return END;
   }
+  
+  // Validate it's a known agent
+  const validAgents = ["analyzer", "scope", "scheduler", "taskUpdater", "budget"];
+  if (!validAgents.includes(nextAgent)) {
+    console.log(`⚠️ Unknown agent: ${nextAgent}, ending workflow`);
+    return END;
+  }
+  
   return nextAgent;
 }
 
-// All agents return to supervisor for next routing decision
-workflow.addEdge("analyzer", "supervisor");
-workflow.addEdge("scope", "supervisor");
-workflow.addEdge("scheduler", "supervisor");
-workflow.addEdge("taskUpdater", "supervisor");
-workflow.addEdge("budget", "supervisor");
+// Define routing logic from agents back to supervisor or end
+function routeFromAgent(state) {
+  const nextAgent = state.next_agent;
+  
+  console.log(`🔀 Routing from agent, next_agent: ${nextAgent}`);
+  
+  // If agent says to end, end immediately
+  if (!nextAgent || nextAgent === "end") {
+    console.log(`✅ Agent requested end, finishing workflow`);
+    return "end";
+  }
+  
+  // Otherwise return to supervisor for next decision
+  console.log(`🔄 Returning to supervisor`);
+  return "supervisor";
+}
 
-// Supervisor routes to agents or ends
-workflow.addConditionalEdges("supervisor", routeFromSupervisor, {
-  analyzer: "analyzer",
-  scope: "scope",
-  scheduler: "scheduler",
-  taskUpdater: "taskUpdater",
-  budget: "budget",
+// All agents can either return to supervisor or end
+workflow.addConditionalEdges("analyzer", routeFromAgent, {
+  supervisor: "supervisor",
   end: END,
 });
+workflow.addConditionalEdges("scope", routeFromAgent, {
+  supervisor: "supervisor",
+  end: END,
+});
+workflow.addConditionalEdges("scheduler", routeFromAgent, {
+  supervisor: "supervisor",
+  end: END,
+});
+workflow.addConditionalEdges("taskUpdater", routeFromAgent, {
+  supervisor: "supervisor",
+  end: END,
+});
+workflow.addConditionalEdges("budget", routeFromAgent, {
+  supervisor: "supervisor",
+  end: END,
+});
+
+// Supervisor routes to agents or ends
+workflow.addConditionalEdges("supervisor", routeFromSupervisor, [
+  "analyzer",
+  "scope",
+  "scheduler",
+  "taskUpdater",
+  "budget",
+  END,
+]);
 
 // Set entry point
 workflow.setEntryPoint("supervisor");
