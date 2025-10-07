@@ -1,18 +1,120 @@
 // entrypoint.web.js - Main entry point for intelligent project management chat
 // Job Queue System Only - No Legacy Operations
 
-import { redisData } from './data/redisData.js';
-import { addProjectToUser } from './data/projectData.js';
+// Data operations now handled by Railway backend
+// import { redisData } from './data/redisData.js';
+// import { addProjectToUser } from './data/projectData.js';
 
-import { selfAnalysisController } from './controllers/selfAnalysisController.js';
-import { gapDetectionController } from './controllers/gapDetectionController.js';
-import { actionPlanningController } from './controllers/actionPlanningController.js';
-import { executionController } from './controllers/executionController.js';
-import { learningController } from './controllers/learningController.js';
-import { portfolioController } from './controllers/portfolioController.js';
+// Portfolio controller is still needed for portfolio operations
+// import { portfolioController } from './controllers/portfolioController.js';
 import { Permissions, webMethod } from 'wix-web-module';
+import { fetch } from 'wix-fetch';
 import { Logger } from './utils/logger.js';
 import { getTemplate } from './templates/templatesRegistry.js';
+
+// Railway API helper functions for job queue operations
+async function storeJobInRailway(job) {
+    const response = await fetch(
+        'https://linkifico-v5-production.up.railway.app/api/store-job',
+        {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ job })
+        }
+    );
+    return response.json();
+}
+
+async function getJobFromRailway(jobId) {
+    const response = await fetch(
+        `https://linkifico-v5-production.up.railway.app/api/get-job/${jobId}`,
+        { method: 'GET' }
+    );
+    const data = await response.json();
+    return data.job || null;
+}
+
+async function updateJobStatusInRailway(jobId, status, progress, message) {
+    const response = await fetch(
+        'https://linkifico-v5-production.up.railway.app/api/update-job-status',
+        {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ jobId, status, progress, message })
+        }
+    );
+    return response.json();
+}
+
+async function saveJobResultsInRailway(jobId, results) {
+    const response = await fetch(
+        'https://linkifico-v5-production.up.railway.app/api/save-job-results',
+        {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ jobId, results })
+        }
+    );
+    return response.json();
+}
+
+async function getJobResultsFromRailway(jobId) {
+    const response = await fetch(
+        `https://linkifico-v5-production.up.railway.app/api/get-job-results/${jobId}`,
+        { method: 'GET' }
+    );
+    const data = await response.json();
+    return data.results || null;
+}
+
+async function getQueuedJobsFromRailway(limit) {
+    const response = await fetch(
+        `https://linkifico-v5-production.up.railway.app/api/get-queued-jobs?limit=${limit}`,
+        { method: 'GET' }
+    );
+    const data = await response.json();
+    return data.jobs || [];
+}
+
+// Job processing functions that call Railway backend
+async function processJobMessageViaRailway(job) {
+    const response = await fetch(
+        'https://linkifico-v5-production.up.railway.app/api/process-message-job',
+        {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ job })
+        }
+    );
+    const data = await response.json();
+    return data.result || null;
+}
+
+async function processJobInitViaRailway(job) {
+    const response = await fetch(
+        'https://linkifico-v5-production.up.railway.app/api/process-init-job',
+        {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ job })
+        }
+    );
+    const data = await response.json();
+    return data.result || null;
+}
+
+async function processJobAnalyzeViaRailway(job) {
+    const response = await fetch(
+        'https://linkifico-v5-production.up.railway.app/api/process-analyze-job',
+        {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ job })
+        }
+    );
+    const data = await response.json();
+    return data.result || null;
+}
 
 // Simple test function to verify backend is working
 export const testBackend = webMethod(Permissions.Anyone, async () => {
@@ -20,8 +122,58 @@ export const testBackend = webMethod(Permissions.Anyone, async () => {
     return { success: true, message: 'Backend is working', timestamp: Date.now() };
 });
 
-// Main job queue function - all operations go through job queue
-// VERSION: 2025-01-03-15:35 - Added debug logging
+// Direct Railway API call for project analysis
+export const analyzeProject = webMethod(
+    Permissions.Anyone,
+    async (projectData) => {
+        try {
+            Logger.info('entrypoint', 'analyzeProject_called', { 
+                hasProjectData: !!projectData,
+                projectId: projectData?.projectId 
+            });
+            
+            const response = await fetch(
+                'https://linkifico-v5-production.up.railway.app/api/analyze-project',
+                {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        query: "Analyze this project for completeness and risks",
+                        projectData: projectData
+                    })
+                }
+            );
+
+            const data = await response.json();
+
+            Logger.info('entrypoint', 'analyzeProject_success', { 
+                hasAnalysis: !!data.analysis,
+                hasResult: !!data.result 
+            });
+
+            return {
+                success: true,
+                analysis: data.analysis,
+                result: data.result
+            };
+
+        } catch (error) {
+            Logger.error('entrypoint', 'analyzeProject_error', error, { 
+                hasProjectData: !!projectData 
+            });
+            
+            return {
+                success: false,
+                error: error.message
+            };
+        }
+    }
+);
+
+// Main job queue function - all operations go through job queue to prevent Wix timeouts
+// VERSION: 2025-01-03-15:35 - Modified to use Railway backend instead of local Redis
 export const processUserRequest = webMethod(Permissions.Anyone, async (requestData) => {
     const { op, projectId, userId, sessionId, payload = {} } = requestData || {};
     
@@ -48,7 +200,7 @@ export const processUserRequest = webMethod(Permissions.Anyone, async (requestDa
         Logger.info('entrypoint', 'operation_start', { op, projectId, userId });
     }
     
-    // Job queue operations
+    // Job queue operations - these prevent Wix timeouts
     if (op === 'submitJob') {
         return await submitJob(projectId, userId, sessionId, payload);
     }
@@ -63,24 +215,27 @@ export const processUserRequest = webMethod(Permissions.Anyone, async (requestDa
         return await processQueuedJobs(payload?.limit || 5);
     }
     
-    // Portfolio operations (still needed for Project Portfolio page)
+    // Portfolio operations - temporarily disabled until portfolio controller is reimplemented
     if (op === 'loadPortfolio') {
-        return await portfolioController.getUserPortfolio(userId);
+        return { success: false, message: 'Portfolio operations temporarily unavailable' };
     }
     if (op === 'archiveProject') {
-        return await portfolioController.archiveProject(userId, payload?.projectId || projectId);
+        return { success: false, message: 'Portfolio operations temporarily unavailable' };
     }
     if (op === 'restoreProject') {
-        return await portfolioController.restoreProject(userId, payload?.projectId || projectId);
+        return { success: false, message: 'Portfolio operations temporarily unavailable' };
     }
     if (op === 'deleteProject') {
-        return await portfolioController.deleteProject(userId, payload?.projectId || projectId);
+        return { success: false, message: 'Portfolio operations temporarily unavailable' };
     }
     
     // No other operations supported - job queue system only
     Logger.warn('entrypoint', 'unknown_operation', { op, projectId, userId });
     return { success: false, message: `Unknown operation: ${op}. Only job queue and portfolio operations are supported.` };
 });
+
+// Job queue functions - modified to use Railway backend instead of local Redis
+// These functions prevent Wix timeouts by providing async job processing
 
 // Submit a job to the queue - returns jobId immediately
 async function submitJob(projectId, userId, sessionId, payload) {
@@ -112,7 +267,8 @@ async function submitJob(projectId, userId, sessionId, payload) {
             jobData: JSON.stringify(job, null, 2)
         });
         
-        await redisData.saveJob(job);
+        // Store job in Railway backend instead of local Redis
+        await storeJobInRailway(job);
         
         Logger.info('entrypoint', 'job_submitted', { jobId, projectId, userId, jobType: job.type });
         
@@ -143,7 +299,8 @@ async function getJobStatus(jobId) {
             return { success: false, message: 'Job ID required' };
         }
         
-        const job = await redisData.getJob(jobId);
+        // Get job status from Railway backend
+        const job = await getJobFromRailway(jobId);
         
         if (!job) {
             return { success: false, message: 'Job not found' };
@@ -175,13 +332,9 @@ async function getJobResults(jobId) {
         }
         
         Logger.info('entrypoint', 'getJobResults_request', { jobId });
-        Logger.info('entrypoint', 'getJobResults_debug_start', { 
-            jobId, 
-            jobIdType: typeof jobId,
-            jobIdLength: jobId ? jobId.length : 0
-        });
         
-        const job = await redisData.getJob(jobId);
+        // Get job from Railway backend
+        const job = await getJobFromRailway(jobId);
         
         if (!job) {
             Logger.warn('entrypoint', 'getJobResults_jobNotFound', { jobId });
@@ -194,20 +347,12 @@ async function getJobResults(jobId) {
             progress: job.progress || 0 
         });
         
-        // DEBUG: Log the full job object to see what we're getting
-        Logger.info('entrypoint', 'getJobResults_debug', { 
-            jobId, 
-            fullJob: JSON.stringify(job, null, 2),
-            jobStatusType: typeof job.status,
-            isQueued: job.status === 'queued'
-        });
-        
         // If job is queued, process it now (on-demand processing)
         if (job.status === 'queued') {
             Logger.info('entrypoint', 'getJobResults_processingQueued', { jobId });
             await processJob(jobId);
             // Refresh job data after processing
-            const updatedJob = await redisData.getJob(jobId);
+            const updatedJob = await getJobFromRailway(jobId);
             if (updatedJob.status !== 'completed') {
                 Logger.info('entrypoint', 'getJobResults_processingInProgress', { 
                     jobId, 
@@ -240,8 +385,8 @@ async function getJobResults(jobId) {
             };
         }
         
-        // Get complete results
-        const results = await redisData.getJobResults(jobId);
+        // Get complete results from Railway backend
+        const results = await getJobResultsFromRailway(jobId);
         
         Logger.info('entrypoint', 'getJobResults_complete', { 
             jobId, 
@@ -267,12 +412,12 @@ async function getJobResults(jobId) {
     }
 }
 
-// Process a single job - called by background worker
+// Process a single job - calls Railway backend for actual processing
 export async function processJob(jobId) {
     try {
         Logger.info('entrypoint', 'processJob_start', { jobId });
         
-        const job = await redisData.getJob(jobId);
+        const job = await getJobFromRailway(jobId);
         
         if (!job) {
             Logger.error('entrypoint', 'processJob_jobNotFound', { jobId });
@@ -286,24 +431,24 @@ export async function processJob(jobId) {
             userId: job.userId 
         });
         
-        // Mark job as processing
-        await redisData.updateJobStatus(jobId, 'processing', 10, 'Starting processing...');
+        // Mark job as processing in Railway backend
+        await updateJobStatusInRailway(jobId, 'processing', 10, 'Starting processing...');
         
         let result;
         
-        // Route to appropriate processor based on job type
+        // Route to appropriate processor - all processing now done by Railway
         switch (job.type) {
             case 'sendMessage':
                 Logger.info('entrypoint', 'processJob_processingMessage', { jobId });
-                result = await processJobMessage(job);
+                result = await processJobMessageViaRailway(job);
                 break;
             case 'init':
                 Logger.info('entrypoint', 'processJob_processingInit', { jobId });
-                result = await processJobInit(job);
+                result = await processJobInitViaRailway(job);
                 break;
             case 'analyze':
                 Logger.info('entrypoint', 'processJob_processingAnalyze', { jobId });
-                result = await processJobAnalyze(job);
+                result = await processJobAnalyzeViaRailway(job);
                 break;
             default:
                 throw new Error(`Unknown job type: ${job.type}`);
@@ -315,11 +460,11 @@ export async function processJob(jobId) {
             resultKeys: result ? Object.keys(result) : []
         });
         
-        // Save complete results
-        await redisData.saveJobResults(jobId, result);
+        // Save complete results in Railway backend
+        await saveJobResultsInRailway(jobId, result);
         
-        // Mark job as completed
-        await redisData.updateJobStatus(jobId, 'completed', 100, 'Processing complete');
+        // Mark job as completed in Railway backend
+        await updateJobStatusInRailway(jobId, 'completed', 100, 'Processing complete');
         
         Logger.info('entrypoint', 'job_completed', { 
             jobId, 
@@ -334,306 +479,16 @@ export async function processJob(jobId) {
             stack: error.stack
         });
         
-        // Mark job as failed
-        await redisData.updateJobStatus(jobId, 'failed', 0, `Processing failed: ${error.message}`);
-    }
-}
-
-// Process message job - EXACTLY 2 Redis operations (1 read, 1 save)
-async function processJobMessage(job) {
-    const { projectId, userId, sessionId, input } = job;
-    
-    Logger.info('entrypoint', 'processJobMessage_start', { 
-        jobId: job.id, 
-        projectId,
-        userId,
-        messageLength: input.message?.length || 0 
-    });
-    
-    // REDIS OPERATION 1: Load all data at the beginning
-    let allData = await redisData.loadAllData(projectId, userId);
-    
-    // Check if this is a truly new project (no existing data in Redis)
-    const existingProjectData = await redisData.getProjectData(projectId);
-    const isNewProject = !existingProjectData;
-    
-    Logger.info('entrypoint', 'processJobMessage_projectCheck', { 
-        jobId: job.id, 
-        projectId, 
-        isNewProject,
-        hasExistingData: !!existingProjectData
-    });
-    
-    // Generate project email if not already set (regardless of whether project data existed)
-    Logger.info('entrypoint', 'processJobMessage_emailCheck', { 
-        jobId: job.id, 
-        projectId, 
-        hasEmail: !!allData.projectData.email,
-        emailValue: allData.projectData.email,
-        emailType: typeof allData.projectData.email
-    });
-    
-    if (!allData.projectData.email) {
-        try {
-            const emailData = await redisData.generateUniqueProjectEmail();
-            allData.projectData.email = emailData.email;
-            allData.projectData.emailId = emailData.emailId;
-            
-            // Save email mapping
-            await redisData.saveEmailMapping(emailData.email, projectId);
-            
-            Logger.info('entrypoint', 'processJobMessage_emailGenerated', { 
-                jobId: job.id, 
-                projectId, 
-                email: emailData.email,
-                emailId: emailData.emailId
-            });
-        } catch (error) {
-            Logger.error('entrypoint', 'processJobMessage_emailGenerationFailed', { 
-                jobId: job.id, 
-                projectId, 
-                error: error.message 
-            });
-            // Continue without email - don't fail the whole process
-        }
-    } else {
-        Logger.info('entrypoint', 'processJobMessage_emailAlreadyExists', { 
-            jobId: job.id, 
-            projectId, 
-            existingEmail: allData.projectData.email
-        });
-    }
-    
-    Logger.info('entrypoint', 'processJobMessage_dataLoaded', { 
-        jobId: job.id, 
-        chatHistoryLength: allData.chatHistory?.length || 0,
-        hasProjectData: !!allData.projectData
-    });
-    
-    // Add user message to history
-    let chatHistory = allData.chatHistory || [];
-    const userMessageExists = chatHistory.some(msg => 
-        msg.role === 'user' && 
-        msg.message === input.message && 
-        msg.sessionId === sessionId
-    );
-    
-    if (!userMessageExists) {
-        chatHistory.push({
-            role: 'user',
-            message: input.message,
-            timestamp: new Date().toISOString(),
-            sessionId: sessionId
-        });
-    }
-    
-    allData.chatHistory = chatHistory;
-    
-    // Process through intelligence loop - controllers pass data between each other
-    const response = await processIntelligenceLoopWithDataFlow(projectId, userId, input.message, allData);
-    
-    Logger.info('entrypoint', 'processJobMessage_intelligenceComplete', { 
-        jobId: job.id, 
-        hasResponse: !!response,
-        responseLength: response?.message?.length || 0,
-        hasAnalysis: !!response?.analysis
-    });
-    
-    // Add AI response to history
-    chatHistory.push({
-        role: 'assistant',
-        message: response.message,
-        timestamp: new Date().toISOString(),
-        sessionId: sessionId,
-        analysis: response.analysis
-    });
-    
-    allData.chatHistory = chatHistory;
-    
-    // Extract todos from response
-    const todosFromAnalysis = (response.analysis && response.analysis.gaps && response.analysis.gaps.todos) ? response.analysis.gaps.todos : [];
-    const todosFromAllData = allData.todos || [];
-    const todosFromGaps = (response.analysis && response.analysis.todos) ? response.analysis.todos : [];
-    
-    const finalTodos = todosFromAnalysis.length > 0 ? todosFromAnalysis :
-                      todosFromAllData.length > 0 ? todosFromAllData :
-                      todosFromGaps;
-    
-    Logger.info('entrypoint', 'processJobMessage_todosExtracted', { 
-        jobId: job.id, 
-        todoCount: finalTodos.length,
-        todosFromAnalysis: todosFromAnalysis.length,
-        todosFromAllData: todosFromAllData.length,
-        todosFromGaps: todosFromGaps.length
-    });
-    
-    // REDIS OPERATION 2: Save all data at the end
-    await redisData.saveAllData(projectId, userId, allData);
-    
-    Logger.info('entrypoint', 'processJobMessage_dataSaved', { 
-        jobId: job.id, 
-        finalChatHistoryLength: chatHistory.length
-    });
-    
-    // Return complete results
-        return {
-        aiResponse: response.message,
-        todos: finalTodos,
-        projectData: allData.projectData,
-        analysis: response.analysis,
-        chatHistory: chatHistory
-    };
-}
-
-// Process init job
-async function processJobInit(job) {
-    const { projectId, userId, input } = job;
-    
-    // REDIS OPERATION 1: Load all data at the beginning
-    let allData = await redisData.loadAllData(projectId, userId);
-    if (!allData.projectData) {
-        allData.projectData = redisData.createDefaultProjectData(projectId);
-    }
-    
-    // Initialize project with template
-    const template = getTemplate(input.templateName || 'simple_waterfall');
-    const initialMessage = input.initialMessage || 'Start';
-    
-    // Process through intelligence loop
-    const response = await processIntelligenceLoopWithDataFlow(projectId, userId, initialMessage, allData);
-    
-    // REDIS OPERATION 2: Save all data at the end
-    await redisData.saveAllData(projectId, userId, allData);
-    
-    return { 
-        message: response.message,
-        projectData: allData.projectData,
-        analysis: response.analysis
-    };
-}
-
-// Process analyze job
-async function processJobAnalyze(job) {
-    const { projectId, userId } = job;
-    
-    // REDIS OPERATION 1: Load all data at the beginning
-    let allData = await redisData.loadAllData(projectId, userId);
-    
-    // Trigger analysis
-    const template = getTemplate('simple_waterfall');
-    const response = await processIntelligenceLoopWithDataFlow(projectId, userId, 'Analyze current project status', allData);
-    
-    // REDIS OPERATION 2: Save all data at the end
-    await redisData.saveAllData(projectId, userId, allData);
-    
-    return {
-        message: response.message,
-        analysis: response.analysis,
-        projectData: allData.projectData
-    };
-}
-
-// Intelligence processing loop - NO Redis calls, controllers pass data between each other
-async function processIntelligenceLoopWithDataFlow(projectId, userId, message, allData) {
-    try {
-        const template = getTemplate('simple_waterfall');
-        
-        // Initialize default data structures if missing
-        if (!allData.knowledgeData) {
-            allData.knowledgeData = { insights: [], patterns: [], recommendations: [] };
-        }
-        if (!allData.gapData) {
-            allData.gapData = { gaps: [], priorities: [], todos: [] };
-        }
-        if (!allData.learningData) {
-            allData.learningData = { lessons: [], improvements: [], adaptations: [] };
-        }
-        if (!allData.reflectionData) {
-            allData.reflectionData = { reflections: [], insights: [], decisions: [] };
-        }
-        
-        // 1. Self Analysis - Pass data to controller, get updated data back
-        const analysis = await selfAnalysisController.analyzeProject(projectId, allData.projectData, allData.chatHistory, allData.knowledgeData, template);
-        if (analysis.knowledgeData) {
-            allData.knowledgeData = analysis.knowledgeData;
-        }
-        
-        // 2. Gap Detection - Pass updated data to controller, get updated data back
-        const gaps = await gapDetectionController.identifyGaps(projectId, analysis, allData.projectData, allData.gapData, template);
-        if (gaps.gapData) {
-            allData.gapData = gaps.gapData;
-        }
-        
-        // 3. Action Planning - Pass updated data to controller, get updated data back
-        const actionPlan = await actionPlanningController.planAction(projectId, userId, gaps, analysis, allData.chatHistory, allData.learningData, template);
-        if (actionPlan.updatedLearningData) {
-            allData.learningData = actionPlan.updatedLearningData;
-        }
-        
-        // 4. Execution - Pass updated data to controller, get final response
-        const execution = await executionController.executeAction(projectId, userId, message, actionPlan, allData.projectData, template);
-        
-        // Update project data with any changes made by execution controller
-        if (execution.analysis?.updatedProjectData) {
-            allData.projectData = execution.analysis.updatedProjectData;
-        }
-        
-        // Regenerate gaps and todos with updated project data
-        const updatedGaps = await gapDetectionController.identifyGaps(projectId, analysis, allData.projectData, allData.gapData, template);
-        if (updatedGaps.gapData) {
-            allData.gapData = updatedGaps.gapData;
-        }
-        
-        // Attach updated gaps and todos to response
-        const response = {
-            message: execution.message,
-            analysis: {
-                ...execution.analysis,
-                gaps: updatedGaps.gapData,
-                todos: updatedGaps.gapData?.todos || []
-            }
-        };
-        
-        // 5. Learning - Run in background (non-blocking, no Redis calls)
-        learningController.learnFromInteraction(projectId, userId, message, execution, allData.chatHistory, allData.learningData, allData.reflectionData)
-            .then((result) => {
-                if (result.updatedLearningData) {
-                    allData.learningData = result.updatedLearningData;
-                }
-                if (result.updatedReflectionData) {
-                    allData.reflectionData = result.updatedReflectionData;
-                }
-                // Separate Redis call for learning data
-                redisData.saveAllData(projectId, userId, allData).catch(console.error);
-            })
-            .catch((error) => {
-                Logger.error('entrypoint', 'learning_error', error, { projectId, userId });
-            });
-        
-        return response;
-        
-    } catch (error) {
-        Logger.error('entrypoint', 'processIntelligenceLoopWithDataFlow_error', { 
-            projectId,
-            userId,
-            error: error.message,
-            stack: error.stack
-        });
-        
-        return {
-            message: "I apologize, but I encountered an error while processing your request. Please try again.",
-            analysis: {
-                error: error.message,
-                gaps: { gaps: [], todos: [] }
-            }
-        };
+        // Mark job as failed in Railway backend
+        await updateJobStatusInRailway(jobId, 'failed', 0, `Processing failed: ${error.message}`);
     }
 }
 
 // Process queued jobs in batch
 async function processQueuedJobs(limit = 5) {
     try {
-        const queuedJobs = await redisData.getQueuedJobs(limit);
+        // Get queued jobs from Railway backend
+        const queuedJobs = await getQueuedJobsFromRailway(limit);
         
         if (queuedJobs.length === 0) {
             return {
