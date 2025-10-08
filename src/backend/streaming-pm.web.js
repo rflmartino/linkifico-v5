@@ -125,8 +125,8 @@ function cleanupExpiredStreams() {
 setInterval(cleanupExpiredStreams, 60000);
 
 /**
- * Process SSE stream from Railway backend using axios if available
- * Falls back to simulated streaming if axios is not available
+ * Process SSE stream from Railway backend using axios
+ * Axios is available in Wix via package.json dependencies
  */
 async function processSSEStream(streamId, projectId, userId, message) {
   try {
@@ -140,7 +140,7 @@ async function processSSEStream(streamId, projectId, userId, message) {
       return;
     }
 
-    // Use axios streaming
+    // Use axios for proper SSE streaming
     try {
       Logger.info('streaming-pm', 'using_axios_streaming', { streamId });
       
@@ -226,8 +226,8 @@ async function processSSEStream(streamId, projectId, userId, message) {
     } catch (axiosError) {
       Logger.error('streaming-pm', 'axios_streaming_failed', axiosError);
       
-      // Fallback: Simulate streaming with regular fetch
-      Logger.info('streaming-pm', 'using_simulated_streaming', { streamId });
+      // Fallback: Use regular process-message endpoint
+      Logger.info('streaming-pm', 'fallback_to_regular_endpoint', { streamId });
       
       try {
         const response = await fetch(
@@ -252,99 +252,89 @@ async function processSSEStream(streamId, projectId, userId, message) {
 
         const result = await response.json();
 
-        // Create simulated streaming events with realistic timing
+        // Create realistic streaming events based on actual results
         const events = [
-          { type: 'connected', message: 'Stream connected', delay: 100 },
-          { type: 'workflow_start', message: '🤔 Analyzing your request...', delay: 500 },
-          { type: 'agent_start', agent: 'supervisor', message: '🎯 Supervisor: Analyzing request and determining routing...', delay: 1000 },
-          { type: 'agent_thinking', agent: 'supervisor', message: '🤔 supervisor reasoning: Routing to appropriate agent based on request type', delay: 1500 },
-          { type: 'agent_start', agent: 'scope', message: '📋 Scope Agent: Starting project scope definition and analysis...', delay: 2000 },
-          { type: 'agent_thinking', agent: 'scope', message: '🤔 scope reasoning: Analyzing project requirements and creating comprehensive scope definition', delay: 2500 }
+          { type: 'connected', message: 'Stream connected' },
+          { type: 'workflow_start', message: '🤔 Analyzing your request...' },
+          { type: 'agent_start', agent: 'supervisor', message: '🎯 Supervisor: Analyzing request and determining routing...' },
+          { type: 'agent_thinking', agent: 'supervisor', message: '🤔 supervisor reasoning: Routing to appropriate agent based on request type' }
         ];
 
-        // Add completion events based on actual results
+        // Add events based on actual results
         if (result.scopeData) {
-          events.push({
-            type: 'agent_complete',
-            agent: 'scope',
-            message: `✅ Scope Agent completed:\n${JSON.stringify(result.scopeData, null, 2)}`,
-            data: result.scopeData,
-            delay: 3000
-          });
+          events.push(
+            { type: 'agent_start', agent: 'scope', message: '📋 Scope Agent: Starting project scope definition and analysis...' },
+            { type: 'agent_thinking', agent: 'scope', message: '🤔 scope reasoning: Analyzing project requirements and creating comprehensive scope definition' },
+            {
+              type: 'agent_complete',
+              agent: 'scope',
+              message: `✅ Scope Agent completed:\n${JSON.stringify(result.scopeData, null, 2)}`,
+              data: result.scopeData
+            }
+          );
         }
 
         if (result.schedulerData) {
           events.push(
-            { type: 'agent_start', agent: 'scheduler', message: '📅 Scheduler Agent: Creating task breakdown and timeline...', delay: 4000 },
+            { type: 'agent_start', agent: 'scheduler', message: '📅 Scheduler Agent: Creating task breakdown and timeline...' },
             {
               type: 'agent_complete',
               agent: 'scheduler',
               message: `✅ Scheduler Agent completed:\n${JSON.stringify(result.schedulerData, null, 2)}`,
-              data: result.schedulerData,
-              delay: 5000
+              data: result.schedulerData
             }
           );
         }
 
         if (result.analysis) {
           events.push(
-            { type: 'agent_start', agent: 'analyzer', message: '🔍 Analyzer: Performing comprehensive project assessment...', delay: 6000 },
+            { type: 'agent_start', agent: 'analyzer', message: '🔍 Analyzer: Performing comprehensive project assessment...' },
             {
               type: 'agent_complete',
               agent: 'analyzer',
               message: `✅ Analysis Agent completed:\n${JSON.stringify(result.analysis, null, 2)}`,
-              data: result.analysis,
-              delay: 7000
+              data: result.analysis
             }
           );
         }
 
-        events.push({ type: 'workflow_complete', message: '✨ All done!', delay: 8000 });
+        events.push({ type: 'workflow_complete', message: '✨ All done!' });
 
-        // Emit events with realistic timing
+        // Add all events to cache
         for (const event of events) {
-          setTimeout(() => {
-            const eventWithTimestamp = {
-              ...event,
-              timestamp: new Date().toISOString()
-            };
-            cache.events.push(eventWithTimestamp);
-            Logger.info('streaming-pm', 'simulated_event', { 
-              streamId, 
-              eventType: event.type,
-              eventIndex: cache.events.length - 1
-            });
-          }, event.delay);
+          cache.events.push({
+            ...event,
+            timestamp: new Date().toISOString()
+          });
         }
 
-        // Set final result and complete after all events
-        setTimeout(() => {
-          cache.finalResult = {
-            projectData: result.projectData,
-            scopeData: result.scopeData,
-            schedulerData: result.schedulerData,
-            updateData: result.updateData,
-            budgetData: result.budgetData,
-            analysis: result.analysis
-          };
-          cache.complete = true;
-          Logger.info('streaming-pm', 'simulated_stream_complete', { 
-            streamId, 
-            totalEvents: cache.events.length 
-          });
-        }, 9000);
+        // Set final result
+        cache.finalResult = {
+          projectData: result.projectData,
+          scopeData: result.scopeData,
+          schedulerData: result.schedulerData,
+          updateData: result.updateData,
+          budgetData: result.budgetData,
+          analysis: result.analysis
+        };
+        
+        cache.complete = true;
+        Logger.info('streaming-pm', 'fallback_stream_complete', { 
+          streamId, 
+          totalEvents: cache.events.length 
+        });
 
-      } catch (error) {
-        Logger.error('streaming-pm', 'simulated_streaming_error', error);
+      } catch (fallbackError) {
+        Logger.error('streaming-pm', 'fallback_streaming_error', fallbackError);
         
         cache.events.push({
           type: 'workflow_error',
           message: '❌ Something went wrong',
-          error: error.message,
+          error: fallbackError.message,
           timestamp: new Date().toISOString()
         });
         
-        cache.error = error.message;
+        cache.error = fallbackError.message;
         cache.complete = true;
       }
     }
