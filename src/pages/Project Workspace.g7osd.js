@@ -1,7 +1,8 @@
 // Project Workspace Page - Velo Frontend
-// Updated for Railway Backend Integration with Job Queue System
+// Updated for Railway Backend Integration with Streaming Support
 
-import { processUserRequest, testBackend } from 'backend/entrypoint.web.js';
+import { startStreamingWorkflow, pollStreamEvents } from 'backend/streaming-pm.web.js';
+import { testBackend } from 'backend/entrypoint.web.js';
 import wixLocation from 'wix-location';
 import { session } from 'wix-storage';
 import { logToBackend } from 'backend/utils/webLogger.web.js';
@@ -100,42 +101,47 @@ $w.onReady(async function () {
 
             chatEl.postMessage({ action: 'updateStatus', status: 'processing' });
 
-            // Submit job to queue using job queue system
-            logHandshake('submitting_job', { 
+            logHandshake('starting_streaming_workflow', { 
                 projectId, 
                 userId: TEST_USER_ID, 
                 messageLength: userMessage.length 
             });
 
-            const job = await processUserRequest({
-                op: 'submitJob',
-                projectId,
-                userId: TEST_USER_ID,
-                sessionId,
-                payload: {
-                    jobType: 'sendMessage',
-                    message: userMessage
-                }
-            }).catch(() => ({ success: false }));
+            // Start streaming workflow
+            try {
+                const streamStart = await startStreamingWorkflow(
+                    projectId,
+                    TEST_USER_ID,
+                    userMessage
+                );
 
-            if (!job || !job.success) {
-                logHandshake('job_submission_failed', { 
-                    error: job?.message || 'Unknown error' 
+                if (!streamStart.success) {
+                    throw new Error(streamStart.error || 'Failed to start stream');
+                }
+
+                logHandshake('stream_started', { streamId: streamStart.streamId });
+
+                // Show initial agent status
+                chatEl.postMessage({
+                    action: 'showAgentStatus',
+                    status: '🤔 Analyzing your request...',
+                    agent: null
                 });
-                chatEl.postMessage({ 
-                    action: 'displayMessage', 
-                    type: 'system', 
-                    content: 'Failed to submit job. Please try again.', 
-                    timestamp: new Date().toISOString() 
+
+                // Start polling for events
+                await pollForStreamingEvents(streamStart.streamId);
+
+            } catch (error) {
+                logHandshake('streaming_error', { error: error.message });
+                chatEl.postMessage({
+                    action: 'displayMessage',
+                    type: 'system',
+                    content: '❌ Failed to process request. Please try again.',
+                    timestamp: new Date().toISOString()
                 });
                 chatEl.postMessage({ action: 'updateStatus', status: 'ready' });
-                return;
+                chatEl.postMessage({ action: 'hideAgentStatus' });
             }
-
-            logHandshake('job_submitted', { jobId: job.jobId });
-
-            // Poll for job results
-            pollForJobResults(job.jobId);
         }
     });
 
@@ -146,194 +152,266 @@ $w.onReady(async function () {
         return `proj_${timestamp}_${randomId}`;
     }
 
-    // Poll for job results - job queue system
-    async function pollForJobResults(jobId) {
-        const maxAttempts = 45; // 45 attempts = 90 seconds max
+    // Poll for streaming events - fast polling to simulate real-time
+    async function pollForStreamingEvents(streamId) {
+        const maxAttempts = 60; // 60 attempts = 60 seconds max (with 1s intervals)
         let attempts = 0;
+        let lastEventIndex = 0;
         const startedAt = Date.now();
-        const intervalMs = 2000;
-        const timeoutMs = 90000;
+        const intervalMs = 1000; // Poll every 1 second for near-real-time updates
+        const timeoutMs = 120000; // 2 minutes max
 
-        logHandshake('polling_start', { jobId, maxAttempts });
+        logHandshake('streaming_poll_start', { streamId, maxAttempts });
 
         const poll = async () => {
             attempts++;
             
             try {
-                const results = await processUserRequest({
-                    op: 'getJobResults',
-                    payload: { jobId: jobId }
-                }).catch((error) => {
-                    logHandshake('polling_error', { jobId, error: error.message });
-                    return null;
-                });
+                const pollResult = await pollStreamEvents(streamId, lastEventIndex);
                 
-                if (!results) {
-                    if (Date.now() - startedAt > timeoutMs) {
-                        logHandshake('polling_timeout', { jobId, attempts });
+                if (!pollResult.success) {
+                    logHandshake('streaming_poll_error', { streamId, error: pollResult.error });
+                    
+                    if (pollResult.complete) {
                         chatEl.postMessage({
                             action: 'displayMessage',
                             type: 'system',
-                            content: 'Processing timed out. Please try again.',
+                            content: `Error: ${pollResult.error}`,
                             timestamp: new Date().toISOString()
                         });
                         chatEl.postMessage({ action: 'updateStatus', status: 'ready' });
+                        chatEl.postMessage({ action: 'hideAgentStatus' });
                         return;
                     }
-                    setTimeout(poll, intervalMs);
+                    
+                    // Retry if not complete
+                    if (Date.now() - startedAt < timeoutMs) {
+                        setTimeout(poll, intervalMs);
+                    }
                     return;
                 }
-                
-                logHandshake('polling_status', { 
-                    jobId, 
-                    attempts, 
-                    status: results.status, 
-                    progress: results.progress || 0
-                });
-                
-                // Update status based on job status
-                if (results.status === 'queued') {
-                    chatEl.postMessage({ action: 'updateStatus', status: 'queued' });
-                } else if (results.status === 'processing') {
-                    chatEl.postMessage({ action: 'updateStatus', status: 'processing' });
-                } else if (results.status === 'failed') {
-                    chatEl.postMessage({ action: 'updateStatus', status: 'error' });
+
+                // Process new events
+                if (pollResult.events && pollResult.events.length > 0) {
+                    for (const event of pollResult.events) {
+                        processStreamEvent(event);
+                    }
+                    lastEventIndex = pollResult.totalEvents;
                 }
-                
-                if (results.status === 'completed') {
-                    logHandshake('job_completed', { 
-                        jobId, 
+
+                // Check if complete
+                if (pollResult.complete) {
+                    logHandshake('streaming_complete', { 
+                        streamId, 
                         attempts, 
-                        duration: Date.now() - startedAt
+                        duration: Date.now() - startedAt,
+                        totalEvents: pollResult.totalEvents
                     });
-                    
-                    // Display AI response
-                    if (results.results?.aiResponse) {
-                        chatEl.postMessage({
-                            action: 'displayMessage',
-                            type: 'assistant',
-                            content: results.results.aiResponse,
-                            timestamp: new Date().toISOString()
-                        });
+
+                    // Display final result
+                    if (pollResult.finalResult) {
+                        displayFinalResult(pollResult.finalResult);
                     }
-                    
-                    // Display project data if available
-                    if (results.results?.projectData) {
-                        const projectData = results.results.projectData;
-                        
-                        // Update project name
-                        if (projectData.name && projectData.name !== 'Untitled Project') {
-                            chatEl.postMessage({ 
-                                action: 'updateProjectName', 
-                                projectName: projectData.name 
-                            });
-                            updatePageTitle(projectData.name);
-                        }
-                        
-                        // Display scope if available
-                        if (projectData.scope && projectData.scope.description) {
-                            chatEl.postMessage({
-                                action: 'displayMessage',
-                                type: 'system',
-                                content: `📋 **Project Scope:** ${projectData.scope.description}`,
-                                timestamp: new Date().toISOString()
-                            });
-                        }
-                        
-                        // Display stages if available
-                        if (projectData.stages && projectData.stages.length > 0) {
-                            const stagesText = projectData.stages
-                                .map(s => `${s.order}. ${s.name} (${s.status})`)
-                                .join('\n');
-                            chatEl.postMessage({
-                                action: 'displayMessage',
-                                type: 'system',
-                                content: `📊 **Project Stages:**\n${stagesText}`,
-                                timestamp: new Date().toISOString()
-                            });
-                        }
-                        
-                        // Display tasks if available
-                        if (projectData.tasks && projectData.tasks.length > 0) {
-                            const tasksText = projectData.tasks
-                                .map(t => `- ${t.title} (${t.status})`)
-                                .join('\n');
-                            chatEl.postMessage({
-                                action: 'displayMessage',
-                                type: 'system',
-                                content: `✅ **Tasks:**\n${tasksText}`,
-                                timestamp: new Date().toISOString()
-                            });
-                        }
-                        
-                        // Display budget if available
-                        if (projectData.budget && projectData.budget.total > 0) {
-                            chatEl.postMessage({
-                                action: 'displayMessage',
-                                type: 'system',
-                                content: `💰 **Budget:** ${projectData.budget.currency} ${projectData.budget.total.toLocaleString()} (Spent: ${projectData.budget.spent.toLocaleString()})`,
-                                timestamp: new Date().toISOString()
-                            });
-                        }
-                    }
-                    
-                    // Display analysis if available
-                    if (results.results?.analysis) {
-                        const analysis = results.results.analysis;
-                        if (analysis.gaps && analysis.gaps.length > 0) {
-                            const gapsText = analysis.gaps
-                                .map(g => `- ${g.description} (${g.severity})`)
-                                .join('\n');
-                            chatEl.postMessage({
-                                action: 'displayMessage',
-                                type: 'system',
-                                content: `⚠️ **Gaps Identified:**\n${gapsText}`,
-                                timestamp: new Date().toISOString()
-                            });
-                        }
-                    }
-                    
+
                     chatEl.postMessage({ action: 'updateStatus', status: 'ready' });
+                    chatEl.postMessage({ action: 'hideAgentStatus' });
                     return;
                 }
-                
-                if (results.status === 'failed') {
-                    logHandshake('job_failed', { 
-                        jobId, 
-                        error: results.message 
-                    });
-                    chatEl.postMessage({
-                        action: 'displayMessage',
-                        type: 'system',
-                        content: `Processing failed: ${results.message}`,
-                        timestamp: new Date().toISOString()
-                    });
-                    chatEl.postMessage({ action: 'updateStatus', status: 'ready' });
-                    return;
-                }
-                
-                // Still processing, continue polling
-                if (attempts < maxAttempts) {
+
+                // Continue polling if not complete
+                if (attempts < maxAttempts && Date.now() - startedAt < timeoutMs) {
                     setTimeout(poll, intervalMs);
                 } else {
-                    logHandshake('polling_max_attempts', { jobId, attempts });
+                    logHandshake('streaming_timeout', { streamId, attempts });
                     chatEl.postMessage({
                         action: 'displayMessage',
                         type: 'system',
-                        content: 'Processing is taking longer than expected. Please try again.',
+                        content: 'Processing timed out. Results may be incomplete.',
                         timestamp: new Date().toISOString()
                     });
                     chatEl.postMessage({ action: 'updateStatus', status: 'ready' });
+                    chatEl.postMessage({ action: 'hideAgentStatus' });
                 }
-                
+
             } catch (error) {
-                logHandshake('polling_error', { jobId, error: error.message });
+                logHandshake('streaming_poll_exception', { streamId, error: error.message });
                 chatEl.postMessage({ action: 'updateStatus', status: 'ready' });
+                chatEl.postMessage({ action: 'hideAgentStatus' });
             }
         };
-        
+
         // Start polling
         poll();
+    }
+
+    // Process individual stream event
+    function processStreamEvent(event) {
+        logHandshake('stream_event', { type: event.type, agent: event.agent });
+
+        switch (event.type) {
+            case 'connected':
+                chatEl.postMessage({
+                    action: 'showAgentStatus',
+                    status: '🔗 Connected to AI agents...',
+                    agent: null
+                });
+                break;
+
+            case 'workflow_start':
+                chatEl.postMessage({
+                    action: 'showAgentStatus',
+                    status: event.message,
+                    agent: null
+                });
+                break;
+
+            case 'agent_start':
+                chatEl.postMessage({
+                    action: 'showAgentStatus',
+                    status: event.message,
+                    agent: event.agent
+                });
+                break;
+
+            case 'agent_thinking':
+                // Show agent reasoning in verbose format
+                chatEl.postMessage({
+                    action: 'showAgentStatus',
+                    status: event.message,
+                    agent: event.agent
+                });
+                break;
+
+            case 'agent_output':
+                // Show raw agent output
+                chatEl.postMessage({
+                    action: 'showAgentStatus',
+                    status: event.message,
+                    agent: event.agent
+                });
+                break;
+
+            case 'agent_complete':
+                // Show detailed completion with verbose output
+                chatEl.postMessage({
+                    action: 'showAgentStatus',
+                    status: event.message,
+                    agent: event.agent
+                });
+                break;
+
+            case 'agent_routing':
+                chatEl.postMessage({
+                    action: 'showAgentStatus',
+                    status: event.message,
+                    agent: null
+                });
+                break;
+
+            case 'workflow_complete':
+                chatEl.postMessage({
+                    action: 'showAgentStatus',
+                    status: event.message,
+                    agent: null
+                });
+                break;
+
+            case 'workflow_error':
+                chatEl.postMessage({
+                    action: 'displayMessage',
+                    type: 'system',
+                    content: `❌ ${event.message}: ${event.error}`,
+                    timestamp: event.timestamp
+                });
+                break;
+
+            default:
+                logHandshake('unknown_event_type', { type: event.type });
+        }
+    }
+
+    // Display final workflow result
+    function displayFinalResult(result) {
+        const { projectData, scopeData, schedulerData, updateData, budgetData, analysis } = result;
+
+        // Display AI response if available
+        if (projectData?.aiResponse) {
+            chatEl.postMessage({
+                action: 'displayMessage',
+                type: 'assistant',
+                content: projectData.aiResponse,
+                timestamp: new Date().toISOString()
+            });
+        }
+
+        // Update project name
+        if (projectData?.name && projectData.name !== 'Untitled Project') {
+            chatEl.postMessage({ 
+                action: 'updateProjectName', 
+                projectName: projectData.name 
+            });
+            updatePageTitle(projectData.name);
+        }
+
+        // Display scope if available
+        if (projectData?.scope?.description || scopeData?.scope?.description) {
+            const scopeDesc = projectData?.scope?.description || scopeData?.scope?.description;
+            chatEl.postMessage({
+                action: 'displayMessage',
+                type: 'system',
+                content: `📋 **Project Scope:** ${scopeDesc}`,
+                timestamp: new Date().toISOString()
+            });
+        }
+
+        // Display stages if available
+        if (projectData?.stages && projectData.stages.length > 0) {
+            const stagesText = projectData.stages
+                .map(s => `${s.order}. ${s.name} (${s.status})`)
+                .join('\n');
+            chatEl.postMessage({
+                action: 'displayMessage',
+                type: 'system',
+                content: `📊 **Project Stages:**\n${stagesText}`,
+                timestamp: new Date().toISOString()
+            });
+        }
+
+        // Display tasks if available
+        if (projectData?.tasks && projectData.tasks.length > 0) {
+            const tasksText = projectData.tasks
+                .map(t => `- ${t.title} (${t.status})`)
+                .join('\n');
+            chatEl.postMessage({
+                action: 'displayMessage',
+                type: 'system',
+                content: `✅ **Tasks:**\n${tasksText}`,
+                timestamp: new Date().toISOString()
+            });
+        }
+
+        // Display budget if available
+        if (projectData?.budget && projectData.budget.total > 0) {
+            chatEl.postMessage({
+                action: 'displayMessage',
+                type: 'system',
+                content: `💰 **Budget:** ${projectData.budget.currency} ${projectData.budget.total.toLocaleString()} (Spent: ${projectData.budget.spent.toLocaleString()})`,
+                timestamp: new Date().toISOString()
+            });
+        }
+
+        // Display analysis if available
+        if (analysis?.gaps && analysis.gaps.length > 0) {
+            const gapsText = analysis.gaps
+                .map(g => `- ${g.description} (${g.severity})`)
+                .join('\n');
+            chatEl.postMessage({
+                action: 'displayMessage',
+                type: 'system',
+                content: `⚠️ **Gaps Identified:**\n${gapsText}`,
+                timestamp: new Date().toISOString()
+            });
+        }
     }
 
     // Function to update page title with project name
