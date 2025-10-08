@@ -1,0 +1,748 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chat UI v2</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            background: #f5f5f5;
+        }
+
+        /* Agent Status Box - Cursor Style (Floating at top) */
+        #agentStatusBox {
+            display: none;
+            position: fixed;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 12px 24px;
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(102, 126, 234, 0.4);
+            z-index: 10000;
+            font-size: 14px;
+            font-weight: 500;
+            animation: slideDown 0.3s ease-out;
+            max-width: 90%;
+            text-align: center;
+        }
+
+        #agentStatusBox.visible {
+            display: block;
+        }
+
+        @keyframes slideDown {
+            from {
+                opacity: 0;
+                transform: translate(-50%, -20px);
+            }
+            to {
+                opacity: 1;
+                transform: translate(-50%, 0);
+            }
+        }
+
+        #agentStatusBox .status-icon {
+            display: inline-block;
+            margin-right: 8px;
+            animation: pulse 2s ease-in-out infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% {
+                opacity: 1;
+            }
+            50% {
+                opacity: 0.6;
+            }
+        }
+        
+        #chatContainer {
+            display: grid;
+            grid-template-columns: 1fr 280px;
+            grid-template-rows: auto 1fr auto;
+            grid-template-areas:
+                "header header"
+                "messages sidebar"
+                "input sidebar";
+            height: 100%;
+            background: white;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        #chatHeader {
+            padding: 16px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            grid-area: header;
+        }
+        
+        #status {
+            font-size: 12px;
+            opacity: 0.9;
+            font-weight: normal;
+        }
+        
+        #projectName {
+            cursor: default;
+            user-select: none;
+            pointer-events: none;
+        }
+        
+        #messagesContainer {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            grid-area: messages;
+        }
+        
+        .message {
+            display: flex;
+            animation: fadeIn 0.3s ease-in;
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        
+        .message.user {
+            justify-content: flex-end;
+        }
+        
+        .message.assistant {
+            justify-content: flex-start;
+        }
+        
+        .message.system {
+            justify-content: center;
+        }
+        
+        .message-bubble {
+            max-width: 70%;
+            padding: 12px 16px;
+            border-radius: 18px;
+            word-wrap: break-word;
+            line-height: 1.4;
+        }
+        
+        .user .message-bubble {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-bottom-right-radius: 4px;
+        }
+        
+        .assistant .message-bubble {
+            background: #f0f0f0;
+            color: #333;
+            border-bottom-left-radius: 4px;
+        }
+        
+        .system .message-bubble {
+            background: #e3f2fd;
+            color: #1976d2;
+            font-size: 14px;
+            border-radius: 8px;
+            padding: 8px 12px;
+            border: 1px solid #bbdefb;
+            animation: systemPulse 2s infinite;
+        }
+        
+        @keyframes systemPulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+        
+        .message-time {
+            font-size: 11px;
+            opacity: 0.6;
+            margin-top: 4px;
+        }
+        
+        #typingIndicator {
+            display: none;
+            padding: 0 20px 10px;
+        }
+        
+        #typingIndicator.show {
+            display: block;
+        }
+        
+        .typing-dots {
+            display: inline-flex;
+            gap: 4px;
+            padding: 12px 16px;
+            background: #f0f0f0;
+            border-radius: 18px;
+            border-bottom-left-radius: 4px;
+        }
+        
+        .typing-dot {
+            width: 8px;
+            height: 8px;
+            background: #999;
+            border-radius: 50%;
+            animation: typing 1.4s infinite;
+        }
+        
+        .typing-dot:nth-child(2) {
+            animation-delay: 0.2s;
+        }
+        
+        .typing-dot:nth-child(3) {
+            animation-delay: 0.4s;
+        }
+        
+        @keyframes typing {
+            0%, 60%, 100% {
+                transform: translateY(0);
+                opacity: 0.5;
+            }
+            30% {
+                transform: translateY(-10px);
+                opacity: 1;
+            }
+        }
+        
+        #inputContainer {
+            padding: 16px;
+            background: white;
+            border-top: 1px solid #e0e0e0;
+            display: flex;
+            gap: 12px;
+            grid-area: input;
+        }
+
+        /* Sidebar for Todos */
+        #sidebar {
+            grid-area: sidebar;
+            border-left: 1px solid #eee;
+            background: #fafafa;
+            display: flex;
+            flex-direction: column;
+            padding: 16px;
+            gap: 12px;
+        }
+        #sidebar h3 {
+            font-size: 14px;
+            font-weight: 600;
+            color: #555;
+        }
+        #todosList {
+            list-style: none;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            padding: 0;
+            margin: 0;
+        }
+        .todo-item {
+            display: flex;
+            align-items: flex-start;
+            gap: 8px;
+            font-size: 13px;
+            color: #444;
+        }
+        .todo-checkbox {
+            width: 14px;
+            height: 14px;
+            margin-top: 2px;
+        }
+        .todo-title.completed {
+            text-decoration: line-through;
+            color: #999;
+        }
+        .todo-meta {
+            font-size: 11px;
+            color: #888;
+        }
+        
+        #messageInput {
+            flex: 1;
+            padding: 12px 16px;
+            border: 1px solid #e0e0e0;
+            border-radius: 24px;
+            outline: none;
+            font-size: 14px;
+            transition: border-color 0.3s;
+        }
+        
+        #messageInput:focus {
+            border-color: #667eea;
+        }
+        
+        #sendButton {
+            padding: 12px 24px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 24px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        
+        #sendButton:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }
+        
+        #sendButton:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        
+        /* Scrollbar styling */
+        #messagesContainer::-webkit-scrollbar {
+            width: 6px;
+        }
+        
+        #messagesContainer::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        
+        #messagesContainer::-webkit-scrollbar-thumb {
+            background: #ccc;
+            border-radius: 3px;
+        }
+        
+        #messagesContainer::-webkit-scrollbar-thumb:hover {
+            background: #999;
+        }
+    </style>
+</head>
+<body>
+    <!-- Agent Status Box (Cursor Style) -->
+    <div id="agentStatusBox">
+        <span class="status-icon">🤖</span>
+        <span id="agentStatusText">Processing...</span>
+    </div>
+
+    <div id="chatContainer">
+        <div id="chatHeader">
+            <span id="projectName">New Project</span>
+            <span id="status">Ready</span>
+        </div>
+        
+        <div id="messagesContainer">
+            <div id="typingIndicator">
+                <div class="typing-dots">
+                    <div class="typing-dot"></div>
+                    <div class="typing-dot"></div>
+                    <div class="typing-dot"></div>
+                </div>
+            </div>
+        </div>
+        <aside id="sidebar">
+            <div id="projectInfo">
+                <h4>Project Email</h4>
+                <div id="projectEmail" style="font-size: 12px; color: #666; margin-bottom: 12px; word-break: break-all;">
+                    Generating...
+                </div>
+            </div>
+            <h3>Todos</h3>
+            <ul id="todosList"></ul>
+        </aside>
+        
+        <div id="inputContainer">
+            <input 
+                type="text" 
+                id="messageInput" 
+                placeholder="Type your message..."
+                autocomplete="off"
+            />
+            <button id="sendButton">Send</button>
+        </div>
+    </div>
+    
+    <script>
+        // Chat UI Controller v2 - WITH STREAMING SUPPORT
+        class ChatUI {
+            constructor() {
+                this.messagesContainer = document.getElementById('messagesContainer');
+                this.messageInput = document.getElementById('messageInput');
+                this.sendButton = document.getElementById('sendButton');
+                this.status = document.getElementById('status');
+                this.projectName = document.getElementById('projectName');
+                this.typingIndicator = document.getElementById('typingIndicator');
+                this.todosList = document.getElementById('todosList');
+                this.projectEmail = document.getElementById('projectEmail');
+                this.agentStatusBox = document.getElementById('agentStatusBox');
+                this.agentStatusText = document.getElementById('agentStatusText');
+                
+                this.sessionId = null;
+                this.projectId = null;
+                this.userId = null;
+                this.lastSystemMessageId = null; // Track system message for updates
+                
+                this.setupEventListeners();
+                this.notifyParent('ready');
+            }
+            
+            setupEventListeners() {
+                // Send button click
+                this.sendButton.addEventListener('click', () => this.sendMessage());
+                
+                // Enter key to send
+                this.messageInput.addEventListener('keypress', (e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        this.sendMessage();
+                    }
+                });
+                
+                // User typing - NO typing indicator for user
+                let typingTimer;
+                this.messageInput.addEventListener('input', () => {
+                    // Just notify parent, don't show typing indicator
+                    this.notifyParent('typing');
+                    clearTimeout(typingTimer);
+                    typingTimer = setTimeout(() => {
+                        this.notifyParent('stopTyping');
+                    }, 1000);
+                });
+                
+                // Listen for messages from parent
+                window.addEventListener('message', (event) => {
+                    this.handleParentMessage(event.data);
+                });
+            }
+            
+            sendMessage() {
+                const message = this.messageInput.value.trim();
+                if (!message) return;
+                
+                // Clear input
+                this.messageInput.value = '';
+                
+                // Disable send button
+                this.sendButton.disabled = true;
+                
+                // Notify parent
+                this.notifyParent('sendMessage', { message });
+            }
+            
+            displayMessage(type, content, timestamp) {
+                // Handle system message updates
+                if (type === 'system') {
+                    this.updateSystemMessage(content, timestamp);
+                    return;
+                }
+                
+                // Clear any existing system message when showing final response
+                if (type === 'assistant' && this.lastSystemMessageId) {
+                    this.clearSystemMessage();
+                }
+                
+                const messageDiv = document.createElement('div');
+                messageDiv.className = `message ${type}`;
+                
+                const bubbleDiv = document.createElement('div');
+                bubbleDiv.className = 'message-bubble';
+                
+                // Parse content for formatting
+                const formattedContent = this.formatContent(content);
+                bubbleDiv.innerHTML = formattedContent;
+                
+                // Add timestamp if provided
+                if (timestamp) {
+                    const timeDiv = document.createElement('div');
+                    timeDiv.className = 'message-time';
+                    timeDiv.textContent = new Date(timestamp).toLocaleTimeString();
+                    bubbleDiv.appendChild(timeDiv);
+                }
+                
+                messageDiv.appendChild(bubbleDiv);
+                this.messagesContainer.appendChild(messageDiv);
+                
+                // Scroll to bottom
+                this.scrollToBottom();
+            }
+            
+            updateSystemMessage(content, timestamp) {
+                // If we have an existing system message, update it
+                if (this.lastSystemMessageId) {
+                    const existingMessage = document.getElementById(this.lastSystemMessageId);
+                    if (existingMessage) {
+                        const bubbleDiv = existingMessage.querySelector('.message-bubble');
+                        const formattedContent = this.formatContent(content);
+                        bubbleDiv.innerHTML = formattedContent;
+                        
+                        // Update timestamp if provided
+                        if (timestamp) {
+                            let timeDiv = bubbleDiv.querySelector('.message-time');
+                            if (!timeDiv) {
+                                timeDiv = document.createElement('div');
+                                timeDiv.className = 'message-time';
+                                bubbleDiv.appendChild(timeDiv);
+                            }
+                            timeDiv.textContent = new Date(timestamp).toLocaleTimeString();
+                        }
+                        
+                        this.scrollToBottom();
+                        return;
+                    }
+                }
+                
+                // Create new system message
+                const messageDiv = document.createElement('div');
+                messageDiv.className = 'message system';
+                messageDiv.id = `system-${Date.now()}`;
+                this.lastSystemMessageId = messageDiv.id;
+                
+                const bubbleDiv = document.createElement('div');
+                bubbleDiv.className = 'message-bubble';
+                
+                const formattedContent = this.formatContent(content);
+                bubbleDiv.innerHTML = formattedContent;
+                
+                // Add timestamp if provided
+                if (timestamp) {
+                    const timeDiv = document.createElement('div');
+                    timeDiv.className = 'message-time';
+                    timeDiv.textContent = new Date(timestamp).toLocaleTimeString();
+                    bubbleDiv.appendChild(timeDiv);
+                }
+                
+                messageDiv.appendChild(bubbleDiv);
+                this.messagesContainer.appendChild(messageDiv);
+                
+                // Scroll to bottom
+                this.scrollToBottom();
+            }
+            
+            clearSystemMessage() {
+                if (this.lastSystemMessageId) {
+                    const existingMessage = document.getElementById(this.lastSystemMessageId);
+                    if (existingMessage) {
+                        existingMessage.remove();
+                        this.lastSystemMessageId = null;
+                    }
+                }
+            }
+            
+            // NEW: Show agent status box (Cursor style)
+            showAgentStatus(status, agent) {
+                this.agentStatusText.textContent = status;
+                this.agentStatusBox.classList.add('visible');
+            }
+            
+            // NEW: Hide agent status box
+            hideAgentStatus() {
+                this.agentStatusBox.classList.remove('visible');
+            }
+            
+            formatContent(content) {
+                // Convert markdown-style formatting
+                let formatted = content;
+                
+                // Bold
+                formatted = formatted.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+                
+                // Line breaks
+                formatted = formatted.replace(/\n/g, '<br>');
+                
+                // Bullet points
+                formatted = formatted.replace(/^• /gm, '&bull; ');
+                
+                return formatted;
+            }
+            
+            updateStatus(status) {
+                const statusTexts = {
+                    'ready': 'Ready',
+                    'processing': 'Processing...',
+                    'analyzing_project...': 'Analyzing project...',
+                    'identifying_gaps...': 'Identifying gaps...',
+                    'planning_actions...': 'Planning actions...',
+                    'generating_response...': 'Generating response...',
+                    'typing': 'AI is typing...',
+                    'error': 'Error'
+                };
+                
+                this.status.textContent = statusTexts[status] || status.replace(/_/g, ' ').replace(/\.\.\./g, '...');
+                
+                // Show typing indicator for any processing state
+                const processingStates = ['processing', 'analyzing_project...', 'identifying_gaps...', 'planning_actions...', 'generating_response...'];
+                if (processingStates.includes(status) || status.includes('...')) {
+                    this.typingIndicator.classList.add('show');
+                    this.sendButton.disabled = true;
+                } else {
+                    this.typingIndicator.classList.remove('show');
+                    this.sendButton.disabled = false;
+                }
+            }
+            
+            handleParentMessage(data) {
+                if (!data || !data.action) return;
+                
+                switch (data.action) {
+                    case 'initialize':
+                        this.sessionId = data.sessionId;
+                        this.projectId = data.projectId;
+                        this.userId = data.userId;
+                        this.projectName.textContent = data.projectName || 'Project Chat';
+                        break;
+                        
+                    case 'displayMessage':
+                        this.displayMessage(data.type, data.content, data.timestamp);
+                        // If todos are included, render them
+                        if (Array.isArray(data.todos)) {
+                            this.renderTodos(data.todos);
+                        }
+                        break;
+                        
+                    case 'updateStatus':
+                        this.updateStatus(data.status);
+                        break;
+                        
+                    case 'loadHistory':
+                        this.loadHistory(data.history);
+                        break;
+                        
+                    case 'clear':
+                        this.clearMessages();
+                        break;
+                        
+                    case 'refresh':
+                        location.reload();
+                        break;
+                        
+                    case 'displayTodos':
+                        this.renderTodos(data.todos || []);
+                        break;
+                        
+                    case 'updateProjectName':
+                        this.updateProjectName(data.projectName);
+                        break;
+                        
+                    case 'updateProjectEmail':
+                        this.updateProjectEmail(data.projectEmail);
+                        break;
+                        
+                    // NEW: Streaming actions
+                    case 'showAgentStatus':
+                        this.showAgentStatus(data.status, data.agent);
+                        break;
+                        
+                    case 'hideAgentStatus':
+                        this.hideAgentStatus();
+                        break;
+                }
+            }
+            
+            loadHistory(history) {
+                if (!history || !Array.isArray(history)) return;
+                
+                // Clear existing messages
+                this.clearMessages();
+                
+                // Display history
+                history.forEach(item => {
+                    const type = item.role === 'user' ? 'user' : 'assistant';
+                    this.displayMessage(type, item.message, item.timestamp);
+                });
+            }
+
+            renderTodos(todos) {
+                if (!this.todosList) return;
+                this.todosList.innerHTML = '';
+                todos.forEach(t => {
+                    const li = document.createElement('li');
+                    li.className = 'todo-item';
+
+                    const checkbox = document.createElement('input');
+                    checkbox.type = 'checkbox';
+                    checkbox.className = 'todo-checkbox';
+                    checkbox.checked = !!t.completed;
+                    checkbox.disabled = true; // Read-only reflective state
+
+                    const title = document.createElement('div');
+                    title.className = 'todo-title' + (t.completed ? ' completed' : '');
+                    title.textContent = t.title || t.id;
+
+                    const meta = document.createElement('div');
+                    meta.className = 'todo-meta';
+                    const priority = t.priority ? `priority: ${t.priority}` : '';
+                    const reason = t.reason ? ` – ${t.reason}` : '';
+                    meta.textContent = [priority, reason].filter(Boolean).join(' ');
+
+                    const content = document.createElement('div');
+                    content.style.display = 'flex';
+                    content.style.flexDirection = 'column';
+                    content.appendChild(title);
+                    if (meta.textContent) content.appendChild(meta);
+
+                    li.appendChild(checkbox);
+                    li.appendChild(content);
+                    this.todosList.appendChild(li);
+                });
+            }
+
+            updateProjectName(projectName) {
+                if (projectName && this.projectName) {
+                    this.projectName.textContent = projectName;
+                }
+            }
+
+            updateProjectEmail(projectEmail) {
+                if (projectEmail && this.projectEmail) {
+                    this.projectEmail.innerHTML = `
+                        <span style="font-family: monospace; background: #f0f0f0; padding: 2px 4px; border-radius: 3px;">
+                            ${projectEmail}
+                        </span>
+                        <button onclick="navigator.clipboard.writeText('${projectEmail}')" 
+                                style="margin-left: 8px; font-size: 10px; padding: 2px 6px; border: none; background: #667eea; color: white; border-radius: 3px; cursor: pointer;"
+                                title="Copy email">
+                            Copy
+                        </button>
+                    `;
+                }
+            }
+            
+            clearMessages() {
+                this.messagesContainer.innerHTML = '';
+                this.lastSystemMessageId = null; // Reset system message tracking
+            }
+            
+            scrollToBottom() {
+                this.messagesContainer.scrollTop = this.messagesContainer.scrollHeight;
+            }
+            
+            notifyParent(action, data = {}) {
+                window.parent.postMessage({
+                    action: action,
+                    ...data
+                }, '*');
+            }
+        }
+        
+        // Initialize chat UI when DOM is ready
+        document.addEventListener('DOMContentLoaded', () => {
+            new ChatUI();
+        });
+    </script>
+</body>
+</html>
+

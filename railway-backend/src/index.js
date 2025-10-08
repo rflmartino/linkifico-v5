@@ -4,6 +4,7 @@ import dotenv from 'dotenv';
 import { runPMWorkflow } from './agents/graph.js';
 import { getRedisClient } from './data/projectData.js';
 import { createProjectData, saveProjectData, getProjectData } from './data/projectData.js';
+import streamingRoutes from './routes/streaming.js';
 
 dotenv.config();
 
@@ -61,6 +62,9 @@ app.use(express.json());
 // Apply API key authentication to all /api/* routes
 app.use('/api/*', authenticateApiKey);
 
+// Mount streaming routes
+app.use('/api', streamingRoutes);
+
 // In-memory job storage (should use Redis in production, but using memory for now)
 const jobs = new Map();
 const jobResults = new Map();
@@ -72,6 +76,7 @@ app.get('/health', (req, res) => {
     message: 'PMaaS Railway Backend with LangGraph is running',
     timestamp: new Date().toISOString(),
     langgraph: 'enabled',
+    streaming: 'enabled',
     jobsInQueue: jobs.size,
     secured: !!API_KEY // Indicates if API key is configured
   });
@@ -434,6 +439,8 @@ app.get('/api/test', (req, res) => {
 app.listen(PORT, () => {
   console.log(`🚀 PMaaS Server running on port ${PORT}`);
   console.log(`🤖 LangGraph multi-agent system ready`);
+  console.log(`🌊 Streaming API enabled (SSE)`);
   console.log(`📊 Health check: http://localhost:${PORT}/health`);
   console.log(`💼 Job Queue API enabled`);
+  console.log(`🔒 API Security: ${API_KEY ? 'ENABLED ✅' : 'DISABLED ⚠️'}`);
 });
