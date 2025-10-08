@@ -1,11 +1,12 @@
 // Wix Backend: src/backend/streaming-pm.web.js
 // Real-time streaming integration with Railway LangGraph agents
-// Uses fast-polling to simulate SSE streaming
+// Uses axios for proper SSE streaming support
 
 import { Permissions, webMethod } from 'wix-web-module';
 import { fetch } from 'wix-fetch';
 import { getSecret } from 'wix-secrets-backend';
 import { Logger } from './utils/logger.js';
+import axios from 'axios';
 
 // In-memory cache for streaming events (per stream session)
 // In production, you might want to use Wix Data or external cache
@@ -124,93 +125,227 @@ function cleanupExpiredStreams() {
 setInterval(cleanupExpiredStreams, 60000);
 
 /**
- * Process SSE stream from Railway backend
- * Collects events and stores them in cache for polling
+ * Process SSE stream from Railway backend using axios if available
+ * Falls back to simulated streaming if axios is not available
  */
 async function processSSEStream(streamId, projectId, userId, message) {
   try {
     const railwayApiKey = await getSecret('RAILWAY_API_KEY');
-    const railwayUrl = 'https://linkifico-v5-production.up.railway.app/api/stream-message';
-
+    
     Logger.info('streaming-pm', 'processSSEStream_start', { streamId, projectId, userId });
 
-    const response = await fetch(railwayUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': railwayApiKey
-      },
-      body: JSON.stringify({
-        query: message,
-        projectId: projectId,
-        userId: userId
-      })
-    });
-
-    if (!response.ok) {
-      throw new Error(`Railway request failed: ${response.status} ${response.statusText}`);
-    }
-
-    // Read the SSE stream
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    
-    let buffer = '';
     const cache = streamCache.get(streamId);
-    
     if (!cache) {
       Logger.warn('streaming-pm', 'processSSEStream_cache_lost', { streamId });
       return;
     }
 
-    while (true) {
-      const { done, value } = await reader.read();
+    // Use axios streaming
+    try {
+      Logger.info('streaming-pm', 'using_axios_streaming', { streamId });
       
-      if (done) {
-        Logger.info('streaming-pm', 'processSSEStream_complete', { 
+      const response = await axios({
+        method: 'post',
+        url: 'https://linkifico-v5-production.up.railway.app/api/stream-message',
+        data: { 
+          query: message, 
+          projectId: projectId, 
+          userId: userId 
+        },
+        headers: { 
+          'Content-Type': 'application/json',
+          'x-api-key': railwayApiKey 
+        },
+        responseType: 'stream'
+      });
+
+      let buffer = '';
+      
+      response.data.on('data', (chunk) => {
+        try {
+          buffer += chunk.toString();
+          
+          // Process complete events (separated by \n\n)
+          const lines = buffer.split('\n\n');
+          buffer = lines.pop() || ''; // Keep incomplete line in buffer
+
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              const data = line.slice(6); // Remove 'data: ' prefix
+              
+              if (data === '[DONE]') {
+                cache.complete = true;
+                Logger.info('streaming-pm', 'stream_done', { streamId });
+                continue;
+              }
+
+              try {
+                const event = JSON.parse(data);
+                cache.events.push(event);
+
+                // Capture final result
+                if (event.type === 'final_result') {
+                  cache.finalResult = event.data;
+                }
+
+                Logger.info('streaming-pm', 'event_received', { 
+                  streamId, 
+                  eventType: event.type,
+                  eventIndex: cache.events.length - 1
+                });
+
+              } catch (parseError) {
+                Logger.error('streaming-pm', 'event_parse_error', parseError);
+              }
+            }
+          }
+        } catch (chunkError) {
+          Logger.error('streaming-pm', 'chunk_processing_error', chunkError);
+        }
+      });
+
+      response.data.on('end', () => {
+        Logger.info('streaming-pm', 'axios_stream_complete', { 
           streamId, 
           totalEvents: cache.events.length 
         });
         cache.complete = true;
-        break;
-      }
+      });
 
-      // Decode chunk
-      buffer += decoder.decode(value, { stream: true });
+      response.data.on('error', (error) => {
+        Logger.error('streaming-pm', 'axios_stream_error', error);
+        cache.error = error.message;
+        cache.complete = true;
+        cache.events.push({
+          type: 'error',
+          message: error.message,
+          timestamp: new Date().toISOString()
+        });
+      });
+
+    } catch (axiosError) {
+      Logger.error('streaming-pm', 'axios_streaming_failed', axiosError);
       
-      // Process complete events (separated by \n\n)
-      const lines = buffer.split('\n\n');
-      buffer = lines.pop() || ''; // Keep incomplete line in buffer
-
-      for (const line of lines) {
-        if (line.startsWith('data: ')) {
-          const data = line.slice(6); // Remove 'data: ' prefix
-          
-          if (data === '[DONE]') {
-            cache.complete = true;
-            Logger.info('streaming-pm', 'processSSEStream_done', { streamId });
-            continue;
+      // Fallback: Simulate streaming with regular fetch
+      Logger.info('streaming-pm', 'using_simulated_streaming', { streamId });
+      
+      try {
+        const response = await fetch(
+          'https://linkifico-v5-production.up.railway.app/api/process-message',
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'x-api-key': railwayApiKey
+            },
+            body: JSON.stringify({
+              query: message,
+              projectId: projectId,
+              userId: userId
+            })
           }
+        );
 
-          try {
-            const event = JSON.parse(data);
-            cache.events.push(event);
+        if (!response.ok) {
+          throw new Error(`Railway request failed: ${response.status} ${response.statusText}`);
+        }
 
-            // Capture final result
-            if (event.type === 'final_result') {
-              cache.finalResult = event.data;
+        const result = await response.json();
+
+        // Create simulated streaming events with realistic timing
+        const events = [
+          { type: 'connected', message: 'Stream connected', delay: 100 },
+          { type: 'workflow_start', message: '🤔 Analyzing your request...', delay: 500 },
+          { type: 'agent_start', agent: 'supervisor', message: '🎯 Supervisor: Analyzing request and determining routing...', delay: 1000 },
+          { type: 'agent_thinking', agent: 'supervisor', message: '🤔 supervisor reasoning: Routing to appropriate agent based on request type', delay: 1500 },
+          { type: 'agent_start', agent: 'scope', message: '📋 Scope Agent: Starting project scope definition and analysis...', delay: 2000 },
+          { type: 'agent_thinking', agent: 'scope', message: '🤔 scope reasoning: Analyzing project requirements and creating comprehensive scope definition', delay: 2500 }
+        ];
+
+        // Add completion events based on actual results
+        if (result.scopeData) {
+          events.push({
+            type: 'agent_complete',
+            agent: 'scope',
+            message: `✅ Scope Agent completed:\n${JSON.stringify(result.scopeData, null, 2)}`,
+            data: result.scopeData,
+            delay: 3000
+          });
+        }
+
+        if (result.schedulerData) {
+          events.push(
+            { type: 'agent_start', agent: 'scheduler', message: '📅 Scheduler Agent: Creating task breakdown and timeline...', delay: 4000 },
+            {
+              type: 'agent_complete',
+              agent: 'scheduler',
+              message: `✅ Scheduler Agent completed:\n${JSON.stringify(result.schedulerData, null, 2)}`,
+              data: result.schedulerData,
+              delay: 5000
             }
+          );
+        }
 
-            Logger.info('streaming-pm', 'event_received', { 
+        if (result.analysis) {
+          events.push(
+            { type: 'agent_start', agent: 'analyzer', message: '🔍 Analyzer: Performing comprehensive project assessment...', delay: 6000 },
+            {
+              type: 'agent_complete',
+              agent: 'analyzer',
+              message: `✅ Analysis Agent completed:\n${JSON.stringify(result.analysis, null, 2)}`,
+              data: result.analysis,
+              delay: 7000
+            }
+          );
+        }
+
+        events.push({ type: 'workflow_complete', message: '✨ All done!', delay: 8000 });
+
+        // Emit events with realistic timing
+        for (const event of events) {
+          setTimeout(() => {
+            const eventWithTimestamp = {
+              ...event,
+              timestamp: new Date().toISOString()
+            };
+            cache.events.push(eventWithTimestamp);
+            Logger.info('streaming-pm', 'simulated_event', { 
               streamId, 
               eventType: event.type,
               eventIndex: cache.events.length - 1
             });
-
-          } catch (parseError) {
-            Logger.error('streaming-pm', 'event_parse_error', parseError);
-          }
+          }, event.delay);
         }
+
+        // Set final result and complete after all events
+        setTimeout(() => {
+          cache.finalResult = {
+            projectData: result.projectData,
+            scopeData: result.scopeData,
+            schedulerData: result.schedulerData,
+            updateData: result.updateData,
+            budgetData: result.budgetData,
+            analysis: result.analysis
+          };
+          cache.complete = true;
+          Logger.info('streaming-pm', 'simulated_stream_complete', { 
+            streamId, 
+            totalEvents: cache.events.length 
+          });
+        }, 9000);
+
+      } catch (error) {
+        Logger.error('streaming-pm', 'simulated_streaming_error', error);
+        
+        cache.events.push({
+          type: 'workflow_error',
+          message: '❌ Something went wrong',
+          error: error.message,
+          timestamp: new Date().toISOString()
+        });
+        
+        cache.error = error.message;
+        cache.complete = true;
       }
     }
 
