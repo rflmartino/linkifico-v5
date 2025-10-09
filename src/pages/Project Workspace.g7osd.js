@@ -121,11 +121,12 @@ $w.onReady(async function () {
 
                 logHandshake('stream_started', { streamId: streamStart.streamId });
 
-                // Show initial agent status
+                // Show initial system message
                 chatEl.postMessage({
-                    action: 'showAgentStatus',
-                    status: '🤔 Analyzing your request...',
-                    agent: null
+                    action: 'displayMessage',
+                    type: 'system',
+                    content: '🤔 Analyzing your request...',
+                    timestamp: new Date().toISOString()
                 });
 
                 // Start polling for events
@@ -140,7 +141,6 @@ $w.onReady(async function () {
                     timestamp: new Date().toISOString()
                 });
                 chatEl.postMessage({ action: 'updateStatus', status: 'ready' });
-                chatEl.postMessage({ action: 'hideAgentStatus' });
             }
         }
     });
@@ -179,65 +179,61 @@ $w.onReady(async function () {
                             content: `Error: ${pollResult.error}`,
                             timestamp: new Date().toISOString()
                         });
-                        chatEl.postMessage({ action: 'updateStatus', status: 'ready' });
-                        chatEl.postMessage({ action: 'hideAgentStatus' });
-                        return;
-                    }
-                    
-                    // Retry if not complete
-                    if (Date.now() - startedAt < timeoutMs) {
-                        setTimeout(poll, intervalMs);
-                    }
-                    return;
-                }
-
-                // Process new events
-                if (pollResult.events && pollResult.events.length > 0) {
-                    for (const event of pollResult.events) {
-                        processStreamEvent(event);
-                    }
-                    lastEventIndex = pollResult.totalEvents;
-                }
-
-                // Check if complete
-                if (pollResult.complete) {
-                    logHandshake('streaming_complete', { 
-                        streamId, 
-                        attempts, 
-                        duration: Date.now() - startedAt,
-                        totalEvents: pollResult.totalEvents
-                    });
-
-                    // Display final result
-                    if (pollResult.finalResult) {
-                        displayFinalResult(pollResult.finalResult);
-                    }
-
                     chatEl.postMessage({ action: 'updateStatus', status: 'ready' });
-                    chatEl.postMessage({ action: 'hideAgentStatus' });
                     return;
                 }
-
-                // Continue polling if not complete
-                if (attempts < maxAttempts && Date.now() - startedAt < timeoutMs) {
+                
+                // Retry if not complete
+                if (Date.now() - startedAt < timeoutMs) {
                     setTimeout(poll, intervalMs);
-                } else {
-                    logHandshake('streaming_timeout', { streamId, attempts });
-                    chatEl.postMessage({
-                        action: 'displayMessage',
-                        type: 'system',
-                        content: 'Processing timed out. Results may be incomplete.',
-                        timestamp: new Date().toISOString()
-                    });
-                    chatEl.postMessage({ action: 'updateStatus', status: 'ready' });
-                    chatEl.postMessage({ action: 'hideAgentStatus' });
+                }
+                return;
+            }
+
+            // Process new events
+            if (pollResult.events && pollResult.events.length > 0) {
+                for (const event of pollResult.events) {
+                    processStreamEvent(event);
+                }
+                lastEventIndex = pollResult.totalEvents;
+            }
+
+            // Check if complete
+            if (pollResult.complete) {
+                logHandshake('streaming_complete', { 
+                    streamId, 
+                    attempts, 
+                    duration: Date.now() - startedAt,
+                    totalEvents: pollResult.totalEvents
+                });
+
+                // Display final result
+                if (pollResult.finalResult) {
+                    displayFinalResult(pollResult.finalResult);
                 }
 
-            } catch (error) {
-                logHandshake('streaming_poll_exception', { streamId, error: error.message });
                 chatEl.postMessage({ action: 'updateStatus', status: 'ready' });
-                chatEl.postMessage({ action: 'hideAgentStatus' });
+                return;
             }
+
+            // Continue polling if not complete
+            if (attempts < maxAttempts && Date.now() - startedAt < timeoutMs) {
+                setTimeout(poll, intervalMs);
+            } else {
+                logHandshake('streaming_timeout', { streamId, attempts });
+                chatEl.postMessage({
+                    action: 'displayMessage',
+                    type: 'system',
+                    content: 'Processing timed out. Results may be incomplete.',
+                    timestamp: new Date().toISOString()
+                });
+                chatEl.postMessage({ action: 'updateStatus', status: 'ready' });
+            }
+
+        } catch (error) {
+            logHandshake('streaming_poll_exception', { streamId, error: error.message });
+            chatEl.postMessage({ action: 'updateStatus', status: 'ready' });
+        }
         };
 
         // Start polling
@@ -250,69 +246,19 @@ $w.onReady(async function () {
 
         switch (event.type) {
             case 'connected':
-                chatEl.postMessage({
-                    action: 'showAgentStatus',
-                    status: '🔗 Connected to AI agents...',
-                    agent: null
-                });
-                break;
-
             case 'workflow_start':
-                chatEl.postMessage({
-                    action: 'showAgentStatus',
-                    status: event.message,
-                    agent: null
-                });
-                break;
-
             case 'agent_start':
-                chatEl.postMessage({
-                    action: 'showAgentStatus',
-                    status: event.message,
-                    agent: event.agent
-                });
-                break;
-
             case 'agent_thinking':
-                // Show agent reasoning in verbose format
-                chatEl.postMessage({
-                    action: 'showAgentStatus',
-                    status: event.message,
-                    agent: event.agent
-                });
-                break;
-
             case 'agent_output':
-                // Show raw agent output
-                chatEl.postMessage({
-                    action: 'showAgentStatus',
-                    status: event.message,
-                    agent: event.agent
-                });
-                break;
-
             case 'agent_complete':
-                // Show detailed completion with verbose output
-                chatEl.postMessage({
-                    action: 'showAgentStatus',
-                    status: event.message,
-                    agent: event.agent
-                });
-                break;
-
             case 'agent_routing':
-                chatEl.postMessage({
-                    action: 'showAgentStatus',
-                    status: event.message,
-                    agent: null
-                });
-                break;
-
             case 'workflow_complete':
+                // All streaming messages update the same system message
                 chatEl.postMessage({
-                    action: 'showAgentStatus',
-                    status: event.message,
-                    agent: null
+                    action: 'displayMessage',
+                    type: 'system',
+                    content: event.message,
+                    timestamp: event.timestamp
                 });
                 break;
 

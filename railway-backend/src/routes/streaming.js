@@ -1,16 +1,17 @@
 // railway-backend/src/routes/streaming.js
-// Server-Sent Events endpoint for real-time updates
+// Polling-based streaming endpoint with Redis storage
 
 import express from 'express';
 import { runStreamingWorkflow } from '../agents/streaming.js';
+import { getRedisClient } from '../data/projectData.js';
 
 const router = express.Router();
 
 /**
- * SSE endpoint - streams agent progress in real-time
- * Client connects and receives events as they happen
+ * Start a streaming workflow - stores progress in Redis
+ * Returns streamId that can be polled for updates
  */
-router.post('/stream-message', async (req, res) => {
+router.post('/start-stream', async (req, res) => {
   const { query, projectId, userId } = req.body;
   
   if (!query || !projectId || !userId) {
@@ -20,70 +21,41 @@ router.post('/stream-message', async (req, res) => {
     });
   }
 
-  console.log('🌊 Starting SSE stream for:', projectId);
+  // Generate unique stream ID
+  const streamId = `stream_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  
+  console.log('🌊 Starting polling-based stream:', streamId);
 
-  // Set headers for Server-Sent Events
-  res.setHeader('Content-Type', 'text/event-stream');
-  res.setHeader('Cache-Control', 'no-cache');
-  res.setHeader('Connection', 'keep-alive');
-  res.setHeader('X-Accel-Buffering', 'no'); // Disable nginx buffering
+  // Initialize stream in Redis
+  const redis = await getRedisClient();
+  await redis.set(`stream:${streamId}`, JSON.stringify({
+    events: [],
+    complete: false,
+    error: null,
+    startedAt: Date.now(),
+    projectId,
+    userId
+  }), 'EX', 600); // Expire after 10 minutes
 
-  // Send initial connection event
-  res.write(`data: ${JSON.stringify({ 
-    type: 'connected',
-    message: 'Stream connected',
-    timestamp: new Date().toISOString()
-  })}\n\n`);
+  // Start workflow in background
+  processWorkflowWithRedis(streamId, query, projectId, userId).catch(error => {
+    console.error('❌ Background workflow error:', error);
+  });
 
-  try {
-    // Run workflow with streaming
-    const finalState = await runStreamingWorkflow(
-      query,
-      projectId,
-      userId,
-      (event) => {
-        // Send each event to the client as it happens
-        res.write(`data: ${JSON.stringify(event)}\n\n`);
-      }
-    );
-
-    // Send final result
-    res.write(`data: ${JSON.stringify({
-      type: 'final_result',
-      data: {
-        projectData: finalState.projectData,
-        scopeData: finalState.scopeData,
-        schedulerData: finalState.schedulerData,
-        updateData: finalState.updateData,
-        budgetData: finalState.budgetData,
-        analysis: finalState.analysis
-      },
-      timestamp: new Date().toISOString()
-    })}\n\n`);
-
-    // Close the stream
-    res.write('data: [DONE]\n\n');
-    res.end();
-
-  } catch (error) {
-    console.error('❌ SSE stream error:', error);
-    
-    res.write(`data: ${JSON.stringify({
-      type: 'error',
-      message: error.message,
-      timestamp: new Date().toISOString()
-    })}\n\n`);
-    
-    res.end();
-  }
+  // Return stream ID immediately
+  res.json({
+    success: true,
+    streamId: streamId,
+    message: 'Stream started - poll /stream-status for updates'
+  });
 });
 
 /**
- * Polling endpoint - for clients that can't use SSE
- * Returns incremental progress stored in Redis
+ * Poll for stream updates
+ * Returns new events since lastEventIndex
  */
 router.post('/stream-status', async (req, res) => {
-  const { streamId } = req.body;
+  const { streamId, lastEventIndex = 0 } = req.body;
   
   if (!streamId) {
     return res.status(400).json({ 
@@ -92,15 +64,98 @@ router.post('/stream-status', async (req, res) => {
     });
   }
 
-  // TODO: Implement Redis-based progress tracking
-  // For now, just return a placeholder
-  res.json({
-    success: true,
-    streamId: streamId,
-    events: [],
-    complete: false
-  });
+  try {
+    const redis = await getRedisClient();
+    const streamData = await redis.get(`stream:${streamId}`);
+    
+    if (!streamData) {
+      return res.json({
+        success: false,
+        error: 'Stream not found or expired',
+        complete: true
+      });
+    }
+
+    const stream = JSON.parse(streamData);
+    
+    // Get new events since lastEventIndex
+    const newEvents = stream.events.slice(lastEventIndex);
+    
+    res.json({
+      success: true,
+      events: newEvents,
+      complete: stream.complete,
+      error: stream.error,
+      finalResult: stream.finalResult,
+      totalEvents: stream.events.length
+    });
+
+  } catch (error) {
+    console.error('❌ Stream status error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      complete: true
+    });
+  }
 });
+
+/**
+ * Process workflow and store events in Redis as they happen
+ */
+async function processWorkflowWithRedis(streamId, query, projectId, userId) {
+  const redis = await getRedisClient();
+  
+  try {
+    console.log(`🔄 Processing workflow for stream: ${streamId}`);
+    
+    // Run workflow with event callback
+    const finalState = await runStreamingWorkflow(
+      query,
+      projectId,
+      userId,
+      async (event) => {
+        // Store each event in Redis as it happens
+        const streamData = await redis.get(`stream:${streamId}`);
+        if (streamData) {
+          const stream = JSON.parse(streamData);
+          stream.events.push(event);
+          await redis.set(`stream:${streamId}`, JSON.stringify(stream), 'EX', 600);
+          console.log(`📝 Stored event ${stream.events.length} for ${streamId}: ${event.type}`);
+        }
+      }
+    );
+
+    // Mark as complete and store final result
+    const streamData = await redis.get(`stream:${streamId}`);
+    if (streamData) {
+      const stream = JSON.parse(streamData);
+      stream.complete = true;
+      stream.finalResult = {
+        projectData: finalState.projectData,
+        scopeData: finalState.scopeData,
+        schedulerData: finalState.schedulerData,
+        updateData: finalState.updateData,
+        budgetData: finalState.budgetData,
+        analysis: finalState.analysis
+      };
+      await redis.set(`stream:${streamId}`, JSON.stringify(stream), 'EX', 600);
+      console.log(`✅ Stream ${streamId} completed`);
+    }
+
+  } catch (error) {
+    console.error(`❌ Workflow error for ${streamId}:`, error);
+    
+    // Store error in Redis
+    const streamData = await redis.get(`stream:${streamId}`);
+    if (streamData) {
+      const stream = JSON.parse(streamData);
+      stream.complete = true;
+      stream.error = error.message;
+      await redis.set(`stream:${streamId}`, JSON.stringify(stream), 'EX', 600);
+    }
+  }
+}
 
 export default router;
 
