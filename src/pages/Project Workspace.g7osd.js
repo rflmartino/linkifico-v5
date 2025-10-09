@@ -159,11 +159,11 @@ $w.onReady(async function () {
 
     // Poll for streaming events using jobId - fast polling to simulate real-time
     async function pollForStreamingEvents(jobId) {
-        const maxAttempts = 60; // 60 attempts = 60 seconds max (with 1s intervals)
+        const maxAttempts = 120; // 120 attempts = 60 seconds max (with 0.5s intervals)
         let attempts = 0;
         let lastEventIndex = 0;
         const startedAt = Date.now();
-        const intervalMs = 1000; // Poll every 1 second for near-real-time updates
+        const intervalMs = 500; // Poll every 0.5 seconds for near-real-time updates
         const timeoutMs = 120000; // 2 minutes max
 
         logHandshake('streaming_poll_start', { jobId, maxAttempts });

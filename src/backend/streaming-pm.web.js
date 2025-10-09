@@ -239,7 +239,7 @@ async function pollRailwayStream(jobId, railwayApiKey) {
       // Don't mark as error - job might not have started yet
       // Just continue polling
       if (streamCache.has(jobId)) {
-        setTimeout(() => pollRailwayStream(jobId, railwayApiKey), 1000);
+        setTimeout(() => pollRailwayStream(jobId, railwayApiKey), 500);
       }
       return;
     }
@@ -270,7 +270,7 @@ async function pollRailwayStream(jobId, railwayApiKey) {
 
     // Continue polling if not complete (job still running)
     if (streamCache.has(jobId)) {
-      setTimeout(() => pollRailwayStream(jobId, railwayApiKey), 1000);
+      setTimeout(() => pollRailwayStream(jobId, railwayApiKey), 500);
     }
 
   } catch (error) {
