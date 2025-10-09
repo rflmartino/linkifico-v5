@@ -69,6 +69,45 @@ app.use('/api', streamingRoutes);
 const jobs = new Map();
 const jobResults = new Map();
 
+// ============================================================================
+// HELPER FUNCTIONS
+// ============================================================================
+
+// Format AI response based on workflow results
+function formatAiResponse(result) {
+  let aiResponse = "I've analyzed your request and processed it.";
+  
+  if (result.scopeData) {
+    // Format a comprehensive response when scope is defined
+    const scope = result.scopeData.scope;
+    aiResponse = `✅ **Project Scope Defined**\n\n`;
+    
+    if (scope?.description) {
+      aiResponse += `**Overview:** ${scope.description}\n\n`;
+    }
+    
+    if (scope?.objectives && scope.objectives.length > 0) {
+      aiResponse += `**Objectives:**\n${scope.objectives.map(obj => `• ${obj}`).join('\n')}\n\n`;
+    }
+    
+    if (scope?.deliverables && scope.deliverables.length > 0) {
+      aiResponse += `**Key Deliverables:**\n${scope.deliverables.map(del => `• ${del}`).join('\n')}\n\n`;
+    }
+    
+    if (result.scopeData.stages && result.scopeData.stages.length > 0) {
+      aiResponse += `**Project Stages:**\n${result.scopeData.stages.map((stage, idx) => `${idx + 1}. ${stage.name}`).join('\n')}`;
+    }
+  } else if (result.analysis) {
+    aiResponse = result.analysis.summary || "Project analysis completed.";
+  } else if (result.direct_answer) {
+    aiResponse = result.direct_answer;
+  } else if (result.reasoning) {
+    aiResponse = result.reasoning;
+  }
+  
+  return aiResponse;
+}
+
 // Health check endpoint (public - no auth required)
 app.get('/health', (req, res) => {
   res.json({ 
@@ -286,7 +325,7 @@ app.post('/api/process-message-job', async (req, res) => {
     res.json({ 
       success: true,
       result: {
-        aiResponse: result.direct_answer || result.reasoning || 'Analysis complete',
+        aiResponse: formatAiResponse(result),
         projectData: finalProjectData,
         projectName: finalProjectData?.name || 'New Project',
         projectEmail: finalProjectData?.email || '',
@@ -336,7 +375,7 @@ app.post('/api/process-init-job', async (req, res) => {
     res.json({ 
       success: true,
       result: {
-        message: result.direct_answer || 'Project initialized',
+        message: formatAiResponse(result),
         projectData: finalProjectData,
         projectName: finalProjectData?.name || 'New Project',
         projectEmail: finalProjectData?.email || '',
@@ -383,7 +422,7 @@ app.post('/api/process-analyze-job', async (req, res) => {
     res.json({ 
       success: true,
       result: {
-        message: result.direct_answer || 'Analysis complete',
+        message: formatAiResponse(result),
         analysis: result.analysis,
         projectData: finalProjectData,
         projectName: finalProjectData?.name || 'New Project',

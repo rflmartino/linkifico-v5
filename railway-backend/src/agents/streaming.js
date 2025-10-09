@@ -2,7 +2,6 @@
 // Streaming workflow that emits events as agents work
 
 import { pmGraph } from './graph.js';
-import { getProjectData } from '../data/projectData.js';
 
 /**
  * Run workflow with streaming events
@@ -27,30 +26,6 @@ export async function runStreamingWorkflow(userQuery, projectId, userId, onEvent
 
     // Small delay to let event be stored
     await new Promise(resolve => setTimeout(resolve, 100));
-
-    // Get current project data and emit initial project info
-    const currentProjectData = await getProjectData(projectId);
-    if (currentProjectData) {
-      // Emit project name
-      if (currentProjectData.name) {
-        onEvent({
-          type: 'updateProjectName',
-          projectName: currentProjectData.name,
-          timestamp: new Date().toISOString()
-        });
-        await new Promise(resolve => setTimeout(resolve, 100));
-      }
-
-      // Emit project email
-      if (currentProjectData.email) {
-        onEvent({
-          type: 'updateProjectEmail',
-          projectEmail: currentProjectData.email,
-          timestamp: new Date().toISOString()
-        });
-        await new Promise(resolve => setTimeout(resolve, 100));
-      }
-    }
 
     // Emit supervisor start
     onEvent({
@@ -81,7 +56,7 @@ export async function runStreamingWorkflow(userQuery, projectId, userId, onEvent
       onEvent({
         type: 'agent_thinking',
         agent: 'scope',
-        message: '🤔 Scope Agent: Analyzing project requirements and creating comprehensive scope definition',
+        message: '🤔 Analyzing project requirements and defining scope...',
         timestamp: new Date().toISOString()
       });
 
@@ -90,34 +65,12 @@ export async function runStreamingWorkflow(userQuery, projectId, userId, onEvent
       onEvent({
         type: 'agent_complete',
         agent: 'scope',
-        message: `✅ Scope Agent completed:\n${JSON.stringify(finalState.scopeData, null, 2)}`,
+        message: '✅ Scope Agent completed - Project scope and stages defined',
         data: finalState.scopeData,
         timestamp: new Date().toISOString()
       });
 
       await new Promise(resolve => setTimeout(resolve, 300));
-
-      // If scope agent updated the project name, emit an event
-      if (finalState.projectData?.name && finalState.projectData.name !== 'New Project') {
-        onEvent({
-          type: 'updateProjectName',
-          projectName: finalState.projectData.name,
-          message: `📝 Project renamed to: ${finalState.projectData.name}`,
-          timestamp: new Date().toISOString()
-        });
-        await new Promise(resolve => setTimeout(resolve, 200));
-      }
-
-      // Emit project email (always available after project creation)
-      if (finalState.projectData?.email) {
-        onEvent({
-          type: 'updateProjectEmail',
-          projectEmail: finalState.projectData.email,
-          message: `📧 Project email: ${finalState.projectData.email}`,
-          timestamp: new Date().toISOString()
-        });
-        await new Promise(resolve => setTimeout(resolve, 200));
-      }
     }
 
     if (finalState.schedulerData) {
@@ -134,7 +87,7 @@ export async function runStreamingWorkflow(userQuery, projectId, userId, onEvent
       onEvent({
         type: 'agent_complete',
         agent: 'scheduler',
-        message: `✅ Scheduler Agent completed:\n${JSON.stringify(finalState.schedulerData, null, 2)}`,
+        message: '✅ Scheduler Agent completed - Tasks and timeline created',
         data: finalState.schedulerData,
         timestamp: new Date().toISOString()
       });
@@ -156,7 +109,7 @@ export async function runStreamingWorkflow(userQuery, projectId, userId, onEvent
       onEvent({
         type: 'agent_complete',
         agent: 'taskUpdater',
-        message: `✅ Task Updater completed:\n${JSON.stringify(finalState.updateData, null, 2)}`,
+        message: '✅ Task Updater completed - Task updates processed',
         data: finalState.updateData,
         timestamp: new Date().toISOString()
       });
@@ -178,7 +131,7 @@ export async function runStreamingWorkflow(userQuery, projectId, userId, onEvent
       onEvent({
         type: 'agent_complete',
         agent: 'budget',
-        message: `✅ Budget Agent completed:\n${JSON.stringify(finalState.budgetData, null, 2)}`,
+        message: '✅ Budget Agent completed - Budget analyzed and updated',
         data: finalState.budgetData,
         timestamp: new Date().toISOString()
       });
@@ -200,7 +153,7 @@ export async function runStreamingWorkflow(userQuery, projectId, userId, onEvent
       onEvent({
         type: 'agent_complete',
         agent: 'analyzer',
-        message: `✅ Analysis Agent completed:\n${JSON.stringify(finalState.analysis, null, 2)}`,
+        message: '✅ Analysis Agent completed - Project assessment done',
         data: finalState.analysis,
         timestamp: new Date().toISOString()
       });

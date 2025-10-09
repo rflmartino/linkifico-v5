@@ -177,8 +177,31 @@ async function processWorkflowWithRedis(streamId, query, projectId, userId) {
       
       // Create AI response from the workflow results
       let aiResponse = "I've analyzed your project and created the initial structure.";
-      if (finalState.scopeData?.scope?.description) {
-        aiResponse = finalState.scopeData.scope.description;
+      
+      if (finalState.scopeData) {
+        // Format a comprehensive response when scope is defined
+        const scope = finalState.scopeData.scope;
+        aiResponse = `✅ **Project Scope Defined**\n\n`;
+        
+        if (scope?.description) {
+          aiResponse += `**Overview:** ${scope.description}\n\n`;
+        }
+        
+        if (scope?.objectives && scope.objectives.length > 0) {
+          aiResponse += `**Objectives:**\n${scope.objectives.map(obj => `• ${obj}`).join('\n')}\n\n`;
+        }
+        
+        if (scope?.deliverables && scope.deliverables.length > 0) {
+          aiResponse += `**Key Deliverables:**\n${scope.deliverables.map(del => `• ${del}`).join('\n')}\n\n`;
+        }
+        
+        if (finalState.scopeData.stages && finalState.scopeData.stages.length > 0) {
+          aiResponse += `**Project Stages:**\n${finalState.scopeData.stages.map((stage, idx) => `${idx + 1}. ${stage.name}`).join('\n')}`;
+        }
+      } else if (finalState.analysis) {
+        aiResponse = finalState.analysis.summary || "Project analysis completed.";
+      } else if (finalState.direct_answer) {
+        aiResponse = finalState.direct_answer;
       } else if (finalState.messages && finalState.messages.length > 0) {
         const lastMsg = finalState.messages[finalState.messages.length - 1];
         if (lastMsg.role === 'assistant' && lastMsg.content) {
