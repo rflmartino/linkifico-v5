@@ -24,135 +24,124 @@ export async function runStreamingWorkflow(userQuery, projectId, userId, onEvent
       timestamp: new Date().toISOString()
     });
 
-    let currentAgent = null;
-    let stepCount = 0;
+    // Emit supervisor start
+    onEvent({
+      type: 'agent_start',
+      agent: 'supervisor',
+      message: '🎯 Supervisor: Analyzing request and determining routing...',
+      icon: '🎯',
+      timestamp: new Date().toISOString()
+    });
 
-    // Stream through the graph
-    for await (const event of pmGraph.stream(initialState)) {
-      stepCount++;
-      
-      // Extract which node/agent is running
-      const nodeNames = Object.keys(event);
-      const nodeName = nodeNames[0];
-      
-      if (!nodeName) continue;
+    // Run the workflow (not streaming, but we'll emit events after)
+    const finalState = await pmGraph.invoke(initialState);
 
-      const nodeState = event[nodeName];
-      
-      // Detect agent changes
-      if (nodeName !== currentAgent) {
-        currentAgent = nodeName;
-        
-        // Emit agent start event
-        const agentMessages = getAgentMessage(nodeName);
-        onEvent({
-          type: 'agent_start',
-          agent: nodeName,
-          message: agentMessages.start,
-          icon: agentMessages.icon,
-          timestamp: new Date().toISOString(),
-          step: stepCount
-        });
-      }
+    // Extract which agents ran from the final state
+    if (finalState.scopeData) {
+      onEvent({
+        type: 'agent_start',
+        agent: 'scope',
+        message: '📋 Scope Agent: Starting project scope definition and analysis...',
+        icon: '📋',
+        timestamp: new Date().toISOString()
+      });
 
-      // Show agent reasoning and verbose output as it works
-      if (nodeState.reasoning) {
-        onEvent({
-          type: 'agent_thinking',
-          agent: nodeName,
-          message: `🤔 ${nodeName} reasoning: ${nodeState.reasoning}`,
-          data: nodeState.reasoning,
-          timestamp: new Date().toISOString()
-        });
-      }
+      onEvent({
+        type: 'agent_thinking',
+        agent: 'scope',
+        message: '🤔 Scope Agent: Analyzing project requirements and creating comprehensive scope definition',
+        timestamp: new Date().toISOString()
+      });
 
-      // Check if agent completed work and show detailed results
-      if (nodeState.scopeData) {
-        onEvent({
-          type: 'agent_complete',
-          agent: 'scope',
-          message: `✅ Scope Agent completed:\n${JSON.stringify(nodeState.scopeData, null, 2)}`,
-          data: nodeState.scopeData,
-          timestamp: new Date().toISOString()
-        });
-      }
-
-      if (nodeState.schedulerData) {
-        onEvent({
-          type: 'agent_complete',
-          agent: 'scheduler',
-          message: `✅ Scheduler Agent completed:\n${JSON.stringify(nodeState.schedulerData, null, 2)}`,
-          data: nodeState.schedulerData,
-          timestamp: new Date().toISOString()
-        });
-      }
-
-      if (nodeState.updateData) {
-        onEvent({
-          type: 'agent_complete',
-          agent: 'taskUpdater',
-          message: `✅ Task Updater completed:\n${JSON.stringify(nodeState.updateData, null, 2)}`,
-          data: nodeState.updateData,
-          timestamp: new Date().toISOString()
-        });
-      }
-
-      if (nodeState.budgetData) {
-        onEvent({
-          type: 'agent_complete',
-          agent: 'budget',
-          message: `✅ Budget Agent completed:\n${JSON.stringify(nodeState.budgetData, null, 2)}`,
-          data: nodeState.budgetData,
-          timestamp: new Date().toISOString()
-        });
-      }
-
-      if (nodeState.analysis) {
-        onEvent({
-          type: 'agent_complete',
-          agent: 'analyzer',
-          message: `✅ Analysis Agent completed:\n${JSON.stringify(nodeState.analysis, null, 2)}`,
-          data: nodeState.analysis,
-          timestamp: new Date().toISOString()
-        });
-      }
-
-      // Show any raw messages or content from agents
-      if (nodeState.messages && nodeState.messages.length > 0) {
-        const lastMessage = nodeState.messages[nodeState.messages.length - 1];
-        if (lastMessage && lastMessage.content) {
-          onEvent({
-            type: 'agent_output',
-            agent: nodeName,
-            message: `📝 ${nodeName} output:\n${lastMessage.content}`,
-            data: lastMessage.content,
-            timestamp: new Date().toISOString()
-          });
-        }
-      }
-
-      // Check if workflow is ending
-      if (nodeState.next_agent === 'end') {
-        onEvent({
-          type: 'agent_routing',
-          message: '🎯 Finalizing workflow...',
-          timestamp: new Date().toISOString()
-        });
-      }
+      onEvent({
+        type: 'agent_complete',
+        agent: 'scope',
+        message: `✅ Scope Agent completed:\n${JSON.stringify(finalState.scopeData, null, 2)}`,
+        data: finalState.scopeData,
+        timestamp: new Date().toISOString()
+      });
     }
 
-    // Get final state
-    const finalState = await pmGraph.invoke(initialState);
+    if (finalState.schedulerData) {
+      onEvent({
+        type: 'agent_start',
+        agent: 'scheduler',
+        message: '📅 Scheduler Agent: Creating task breakdown and timeline...',
+        icon: '📅',
+        timestamp: new Date().toISOString()
+      });
+
+      onEvent({
+        type: 'agent_complete',
+        agent: 'scheduler',
+        message: `✅ Scheduler Agent completed:\n${JSON.stringify(finalState.schedulerData, null, 2)}`,
+        data: finalState.schedulerData,
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    if (finalState.updateData) {
+      onEvent({
+        type: 'agent_start',
+        agent: 'taskUpdater',
+        message: '✏️ Task Updater: Processing task modifications...',
+        icon: '✏️',
+        timestamp: new Date().toISOString()
+      });
+
+      onEvent({
+        type: 'agent_complete',
+        agent: 'taskUpdater',
+        message: `✅ Task Updater completed:\n${JSON.stringify(finalState.updateData, null, 2)}`,
+        data: finalState.updateData,
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    if (finalState.budgetData) {
+      onEvent({
+        type: 'agent_start',
+        agent: 'budget',
+        message: '💰 Budget Agent: Analyzing financial requirements...',
+        icon: '💰',
+        timestamp: new Date().toISOString()
+      });
+
+      onEvent({
+        type: 'agent_complete',
+        agent: 'budget',
+        message: `✅ Budget Agent completed:\n${JSON.stringify(finalState.budgetData, null, 2)}`,
+        data: finalState.budgetData,
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    if (finalState.analysis) {
+      onEvent({
+        type: 'agent_start',
+        agent: 'analyzer',
+        message: '🔍 Analyzer: Performing comprehensive project assessment...',
+        icon: '🔍',
+        timestamp: new Date().toISOString()
+      });
+
+      onEvent({
+        type: 'agent_complete',
+        agent: 'analyzer',
+        message: `✅ Analysis Agent completed:\n${JSON.stringify(finalState.analysis, null, 2)}`,
+        data: finalState.analysis,
+        timestamp: new Date().toISOString()
+      });
+    }
 
     // Emit completion event
     onEvent({
       type: 'workflow_complete',
       message: '✨ All done!',
-      timestamp: new Date().toISOString(),
-      totalSteps: stepCount
+      timestamp: new Date().toISOString()
     });
 
-    console.log(`✅ Streaming workflow complete (${stepCount} steps)`);
+    console.log(`✅ Streaming workflow complete`);
     
     return finalState;
 

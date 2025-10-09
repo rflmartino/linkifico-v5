@@ -109,6 +109,19 @@ async function processWorkflowWithRedis(streamId, query, projectId, userId) {
   try {
     console.log(`🔄 Processing workflow for stream: ${streamId}`);
     
+    // Import project data functions
+    const { getProjectData, createProjectData, saveProjectData } = await import('../data/projectData.js');
+    
+    // Get or create project data first
+    let projectData = await getProjectData(projectId);
+    if (!projectData) {
+      console.log(`📦 Creating new project for stream: ${projectId}`);
+      projectData = createProjectData(projectId, userId, {
+        name: 'Untitled Project'
+      });
+      await saveProjectData(projectId, projectData);
+    }
+    
     // Run workflow with event callback
     const finalState = await runStreamingWorkflow(
       query,
