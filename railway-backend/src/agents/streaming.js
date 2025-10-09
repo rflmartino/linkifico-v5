@@ -24,6 +24,9 @@ export async function runStreamingWorkflow(userQuery, projectId, userId, onEvent
       timestamp: new Date().toISOString()
     });
 
+    // Small delay to let event be stored
+    await new Promise(resolve => setTimeout(resolve, 100));
+
     // Emit supervisor start
     onEvent({
       type: 'agent_start',
@@ -33,10 +36,12 @@ export async function runStreamingWorkflow(userQuery, projectId, userId, onEvent
       timestamp: new Date().toISOString()
     });
 
-    // Run the workflow (not streaming, but we'll emit events after)
+    await new Promise(resolve => setTimeout(resolve, 200));
+
+    // Run the workflow (not streaming, but we'll emit events as if they're happening)
     const finalState = await pmGraph.invoke(initialState);
 
-    // Extract which agents ran from the final state
+    // Extract which agents ran from the final state and emit events with delays
     if (finalState.scopeData) {
       onEvent({
         type: 'agent_start',
@@ -46,12 +51,16 @@ export async function runStreamingWorkflow(userQuery, projectId, userId, onEvent
         timestamp: new Date().toISOString()
       });
 
+      await new Promise(resolve => setTimeout(resolve, 500));
+
       onEvent({
         type: 'agent_thinking',
         agent: 'scope',
         message: '🤔 Scope Agent: Analyzing project requirements and creating comprehensive scope definition',
         timestamp: new Date().toISOString()
       });
+
+      await new Promise(resolve => setTimeout(resolve, 500));
 
       onEvent({
         type: 'agent_complete',
@@ -60,6 +69,8 @@ export async function runStreamingWorkflow(userQuery, projectId, userId, onEvent
         data: finalState.scopeData,
         timestamp: new Date().toISOString()
       });
+
+      await new Promise(resolve => setTimeout(resolve, 300));
     }
 
     if (finalState.schedulerData) {
@@ -71,6 +82,8 @@ export async function runStreamingWorkflow(userQuery, projectId, userId, onEvent
         timestamp: new Date().toISOString()
       });
 
+      await new Promise(resolve => setTimeout(resolve, 500));
+
       onEvent({
         type: 'agent_complete',
         agent: 'scheduler',
@@ -78,6 +91,8 @@ export async function runStreamingWorkflow(userQuery, projectId, userId, onEvent
         data: finalState.schedulerData,
         timestamp: new Date().toISOString()
       });
+
+      await new Promise(resolve => setTimeout(resolve, 300));
     }
 
     if (finalState.updateData) {
@@ -89,6 +104,8 @@ export async function runStreamingWorkflow(userQuery, projectId, userId, onEvent
         timestamp: new Date().toISOString()
       });
 
+      await new Promise(resolve => setTimeout(resolve, 500));
+
       onEvent({
         type: 'agent_complete',
         agent: 'taskUpdater',
@@ -96,6 +113,8 @@ export async function runStreamingWorkflow(userQuery, projectId, userId, onEvent
         data: finalState.updateData,
         timestamp: new Date().toISOString()
       });
+
+      await new Promise(resolve => setTimeout(resolve, 300));
     }
 
     if (finalState.budgetData) {
@@ -107,6 +126,8 @@ export async function runStreamingWorkflow(userQuery, projectId, userId, onEvent
         timestamp: new Date().toISOString()
       });
 
+      await new Promise(resolve => setTimeout(resolve, 500));
+
       onEvent({
         type: 'agent_complete',
         agent: 'budget',
@@ -114,6 +135,8 @@ export async function runStreamingWorkflow(userQuery, projectId, userId, onEvent
         data: finalState.budgetData,
         timestamp: new Date().toISOString()
       });
+
+      await new Promise(resolve => setTimeout(resolve, 300));
     }
 
     if (finalState.analysis) {
@@ -125,6 +148,8 @@ export async function runStreamingWorkflow(userQuery, projectId, userId, onEvent
         timestamp: new Date().toISOString()
       });
 
+      await new Promise(resolve => setTimeout(resolve, 500));
+
       onEvent({
         type: 'agent_complete',
         agent: 'analyzer',
@@ -132,6 +157,8 @@ export async function runStreamingWorkflow(userQuery, projectId, userId, onEvent
         data: finalState.analysis,
         timestamp: new Date().toISOString()
       });
+
+      await new Promise(resolve => setTimeout(resolve, 300));
     }
 
     // Emit completion event

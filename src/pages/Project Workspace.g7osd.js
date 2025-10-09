@@ -285,15 +285,28 @@ $w.onReady(async function () {
     function displayFinalResult(result) {
         const { projectData, scopeData, schedulerData, updateData, budgetData, analysis } = result;
 
-        // Display AI response if available
-        if (projectData?.aiResponse) {
-            chatEl.postMessage({
-                action: 'displayMessage',
-                type: 'assistant',
-                content: projectData.aiResponse,
-                timestamp: new Date().toISOString()
-            });
+        // Always display an AI response
+        let aiResponse = projectData?.aiResponse;
+        
+        if (!aiResponse) {
+            // Generate a response based on what was created
+            if (scopeData && projectData?.stages?.length > 0) {
+                aiResponse = `I've created your project plan with ${projectData.stages.length} stages. `;
+                if (projectData.name && projectData.name !== 'Untitled Project') {
+                    aiResponse = `I've created the "${projectData.name}" project plan with ${projectData.stages.length} stages. `;
+                }
+                aiResponse += "You can now start working on the first stage!";
+            } else {
+                aiResponse = "I've analyzed your request and created the initial project structure.";
+            }
         }
+        
+        chatEl.postMessage({
+            action: 'displayMessage',
+            type: 'assistant',
+            content: aiResponse,
+            timestamp: new Date().toISOString()
+        });
 
         // Update project name
         if (projectData?.name && projectData.name !== 'Untitled Project') {

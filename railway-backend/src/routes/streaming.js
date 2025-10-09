@@ -122,38 +122,84 @@ async function processWorkflowWithRedis(streamId, query, projectId, userId) {
       await saveProjectData(projectId, projectData);
     }
     
-    // Run workflow with event callback
+    // Use a lock to prevent race conditions when storing events
+    let isUpdating = false;
+    const pendingEvents = [];
+    
+    // Function to safely append event to Redis
+    const storeEvent = async (event) => {
+      pendingEvents.push(event);
+      
+      // If already updating, wait for next batch
+      if (isUpdating) return;
+      
+      isUpdating = true;
+      
+      try {
+        // Process all pending events
+        while (pendingEvents.length > 0) {
+          const eventsToStore = [...pendingEvents];
+          pendingEvents.length = 0; // Clear pending
+          
+          const streamData = await redis.get(`stream:${streamId}`);
+          if (streamData) {
+            const stream = JSON.parse(streamData);
+            stream.events.push(...eventsToStore);
+            await redis.set(`stream:${streamId}`, JSON.stringify(stream), 'EX', 600);
+            console.log(`📝 Stored ${eventsToStore.length} event(s) for ${streamId}, total now: ${stream.events.length}`);
+          }
+        }
+      } finally {
+        isUpdating = false;
+      }
+    };
+    
+    // Run workflow with event callback - store events as they happen
     const finalState = await runStreamingWorkflow(
       query,
       projectId,
       userId,
       async (event) => {
-        // Store each event in Redis as it happens
-        const streamData = await redis.get(`stream:${streamId}`);
-        if (streamData) {
-          const stream = JSON.parse(streamData);
-          stream.events.push(event);
-          await redis.set(`stream:${streamId}`, JSON.stringify(stream), 'EX', 600);
-          console.log(`📝 Stored event ${stream.events.length} for ${streamId}: ${event.type}`);
-        }
+        await storeEvent(event);
       }
     );
-
-    // Mark as complete and store final result
+    
+    // Wait for any pending events to be stored
+    while (isUpdating || pendingEvents.length > 0) {
+      await new Promise(resolve => setTimeout(resolve, 50));
+    }
+    
+    // Now mark as complete and store final result
     const streamData = await redis.get(`stream:${streamId}`);
     if (streamData) {
       const stream = JSON.parse(streamData);
       stream.complete = true;
+      
+      // Create AI response from the workflow results
+      let aiResponse = "I've analyzed your project and created the initial structure.";
+      if (finalState.scopeData?.scope?.description) {
+        aiResponse = finalState.scopeData.scope.description;
+      } else if (finalState.messages && finalState.messages.length > 0) {
+        const lastMsg = finalState.messages[finalState.messages.length - 1];
+        if (lastMsg.role === 'assistant' && lastMsg.content) {
+          aiResponse = lastMsg.content;
+        }
+      }
+      
       stream.finalResult = {
-        projectData: finalState.projectData,
+        projectData: {
+          ...finalState.projectData,
+          aiResponse: aiResponse  // Ensure AI response is included
+        },
         scopeData: finalState.scopeData,
         schedulerData: finalState.schedulerData,
         updateData: finalState.updateData,
         budgetData: finalState.budgetData,
         analysis: finalState.analysis
       };
+      
       await redis.set(`stream:${streamId}`, JSON.stringify(stream), 'EX', 600);
-      console.log(`✅ Stream ${streamId} completed`);
+      console.log(`✅ Stream ${streamId} completed with ${stream.events.length} events`);
     }
 
   } catch (error) {
