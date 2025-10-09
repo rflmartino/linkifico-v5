@@ -101,15 +101,20 @@ $w.onReady(async function () {
 
             chatEl.postMessage({ action: 'updateStatus', status: 'processing' });
 
+            // Generate jobId for this request
+            const jobId = `job_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
+
             logHandshake('starting_streaming_workflow', { 
+                jobId,
                 projectId, 
                 userId: TEST_USER_ID, 
                 messageLength: userMessage.length 
             });
 
-            // Start streaming workflow
+            // Start streaming workflow using jobId
             try {
                 const streamStart = await startStreamingWorkflow(
+                    jobId,
                     projectId,
                     TEST_USER_ID,
                     userMessage
@@ -119,7 +124,7 @@ $w.onReady(async function () {
                     throw new Error(streamStart.error || 'Failed to start stream');
                 }
 
-                logHandshake('stream_started', { streamId: streamStart.streamId });
+                logHandshake('stream_started', { jobId });
 
                 // Show initial system message
                 chatEl.postMessage({
@@ -129,8 +134,8 @@ $w.onReady(async function () {
                     timestamp: new Date().toISOString()
                 });
 
-                // Start polling for events
-                await pollForStreamingEvents(streamStart.streamId);
+                // Start polling for events using jobId
+                await pollForStreamingEvents(jobId);
 
             } catch (error) {
                 logHandshake('streaming_error', { error: error.message });
@@ -152,8 +157,8 @@ $w.onReady(async function () {
         return `proj_${timestamp}_${randomId}`;
     }
 
-    // Poll for streaming events - fast polling to simulate real-time
-    async function pollForStreamingEvents(streamId) {
+    // Poll for streaming events using jobId - fast polling to simulate real-time
+    async function pollForStreamingEvents(jobId) {
         const maxAttempts = 60; // 60 attempts = 60 seconds max (with 1s intervals)
         let attempts = 0;
         let lastEventIndex = 0;
@@ -161,16 +166,16 @@ $w.onReady(async function () {
         const intervalMs = 1000; // Poll every 1 second for near-real-time updates
         const timeoutMs = 120000; // 2 minutes max
 
-        logHandshake('streaming_poll_start', { streamId, maxAttempts });
+        logHandshake('streaming_poll_start', { jobId, maxAttempts });
 
         const poll = async () => {
             attempts++;
             
             try {
-                const pollResult = await pollStreamEvents(streamId, lastEventIndex);
+                const pollResult = await pollStreamEvents(jobId, lastEventIndex);
                 
                 if (!pollResult.success) {
-                    logHandshake('streaming_poll_error', { streamId, error: pollResult.error });
+                    logHandshake('streaming_poll_error', { jobId, error: pollResult.error });
                     
                     if (pollResult.complete) {
                         chatEl.postMessage({
@@ -201,7 +206,7 @@ $w.onReady(async function () {
             // Check if complete
             if (pollResult.complete) {
                 logHandshake('streaming_complete', { 
-                    streamId, 
+                    jobId, 
                     attempts, 
                     duration: Date.now() - startedAt,
                     totalEvents: pollResult.totalEvents
@@ -220,7 +225,7 @@ $w.onReady(async function () {
             if (attempts < maxAttempts && Date.now() - startedAt < timeoutMs) {
                 setTimeout(poll, intervalMs);
             } else {
-                logHandshake('streaming_timeout', { streamId, attempts });
+                logHandshake('streaming_timeout', { jobId, attempts });
                 chatEl.postMessage({
                     action: 'displayMessage',
                     type: 'system',
@@ -231,7 +236,7 @@ $w.onReady(async function () {
             }
 
         } catch (error) {
-            logHandshake('streaming_poll_exception', { streamId, error: error.message });
+            logHandshake('streaming_poll_exception', { jobId, error: error.message });
             chatEl.postMessage({ action: 'updateStatus', status: 'ready' });
         }
         };

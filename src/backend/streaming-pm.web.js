@@ -14,37 +14,34 @@ const streamCache = new Map();
 const CACHE_EXPIRY_MS = 5 * 60 * 1000;
 
 /**
- * Start a streaming workflow
- * Returns streamId that frontend can poll for updates
+ * Start a streaming workflow using jobId as streamId
+ * Returns jobId that frontend can poll for updates
  */
 export const startStreamingWorkflow = webMethod(
   Permissions.Anyone,
-  async (projectId, userId, message) => {
-    const streamId = `stream_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    
+  async (jobId, projectId, userId, message) => {
     try {
       Logger.info('streaming-pm', 'startStreamingWorkflow', { 
-        streamId, 
+        jobId, 
         projectId, 
         userId,
         messageLength: message.length 
       });
 
-      // Initialize stream cache
-      streamCache.set(streamId, {
+      // Initialize stream cache using jobId
+      streamCache.set(jobId, {
         events: [],
         complete: false,
         error: null,
         startedAt: Date.now(),
         finalResult: null,
-        railwayStreamId: null,
         lastEventIndex: 0
       });
 
-      // Start Railway stream and begin polling
-      startRailwayStreamAndPoll(streamId, projectId, userId, message).catch(error => {
-        Logger.error('streaming-pm', 'startRailwayStreamAndPoll_error', error);
-        const cache = streamCache.get(streamId);
+      // Start Railway workflow with polling
+      startRailwayWorkflow(jobId, projectId, userId, message).catch(error => {
+        Logger.error('streaming-pm', 'startRailwayWorkflow_error', error);
+        const cache = streamCache.get(jobId);
         if (cache) {
           cache.error = error.message;
           cache.complete = true;
@@ -53,7 +50,7 @@ export const startStreamingWorkflow = webMethod(
 
       return {
         success: true,
-        streamId: streamId,
+        jobId: jobId,
         message: 'Stream started - poll for updates'
       };
 
@@ -68,14 +65,14 @@ export const startStreamingWorkflow = webMethod(
 );
 
 /**
- * Poll for streaming events - frontend calls this repeatedly
+ * Poll for streaming events using jobId - frontend calls this repeatedly
  * Returns new events since last poll
  */
 export const pollStreamEvents = webMethod(
   Permissions.Anyone,
-  async (streamId, lastEventIndex = 0) => {
+  async (jobId, lastEventIndex = 0) => {
     try {
-      const cache = streamCache.get(streamId);
+      const cache = streamCache.get(jobId);
       
       if (!cache) {
         return {
@@ -113,10 +110,10 @@ export const pollStreamEvents = webMethod(
  */
 function cleanupExpiredStreams() {
   const now = Date.now();
-  for (const [streamId, cache] of streamCache.entries()) {
+  for (const [jobId, cache] of streamCache.entries()) {
     if (now - cache.startedAt > CACHE_EXPIRY_MS) {
-      streamCache.delete(streamId);
-      Logger.info('streaming-pm', 'cleanupExpiredStreams', { streamId, age: now - cache.startedAt });
+      streamCache.delete(jobId);
+      Logger.info('streaming-pm', 'cleanupExpiredStreams', { jobId, age: now - cache.startedAt });
     }
   }
 }
@@ -125,21 +122,21 @@ function cleanupExpiredStreams() {
 setInterval(cleanupExpiredStreams, 60000);
 
 /**
- * Start Railway stream and poll for updates every second
+ * Start Railway workflow using jobId as streamId
  */
-async function startRailwayStreamAndPoll(streamId, projectId, userId, message) {
+async function startRailwayWorkflow(jobId, projectId, userId, message) {
   try {
     const railwayApiKey = await getSecret('RAILWAY_API_KEY');
-    const cache = streamCache.get(streamId);
+    const cache = streamCache.get(jobId);
     
     if (!cache) {
-      Logger.warn('streaming-pm', 'startRailwayStreamAndPoll_cache_lost', { streamId });
+      Logger.warn('streaming-pm', 'startRailwayWorkflow_cache_lost', { jobId });
       return;
     }
 
-    Logger.info('streaming-pm', 'starting_railway_stream', { streamId });
+    Logger.info('streaming-pm', 'starting_railway_workflow', { jobId });
 
-    // Start the stream on Railway
+    // Start the workflow on Railway using jobId as streamId
     const startResponse = await fetch(
       'https://linkifico-v5-production.up.railway.app/api/start-stream',
       {
@@ -149,6 +146,7 @@ async function startRailwayStreamAndPoll(streamId, projectId, userId, message) {
           'x-api-key': railwayApiKey
         },
         body: JSON.stringify({
+          streamId: jobId,  // Use jobId as streamId
           query: message,
           projectId: projectId,
           userId: userId
@@ -161,19 +159,21 @@ async function startRailwayStreamAndPoll(streamId, projectId, userId, message) {
     }
 
     const startResult = await startResponse.json();
-    const railwayStreamId = startResult.streamId;
+    
+    if (!startResult.success) {
+      throw new Error(startResult.error || 'Railway failed to start stream');
+    }
 
-    Logger.info('streaming-pm', 'railway_stream_started', { streamId, railwayStreamId });
+    Logger.info('streaming-pm', 'railway_workflow_started', { jobId });
 
-    // Store Railway stream ID
-    cache.railwayStreamId = railwayStreamId;
-
-    // Start polling Railway for updates
-    pollRailwayStream(streamId, railwayStreamId, railwayApiKey);
+    // Wait a bit for Railway to initialize the stream in Redis, then start polling
+    setTimeout(() => {
+      pollRailwayStream(jobId, railwayApiKey);
+    }, 500);
 
   } catch (error) {
-    Logger.error('streaming-pm', 'startRailwayStreamAndPoll_failed', error);
-    const cache = streamCache.get(streamId);
+    Logger.error('streaming-pm', 'startRailwayWorkflow_failed', error);
+    const cache = streamCache.get(jobId);
     if (cache) {
       cache.error = error.message;
       cache.complete = true;
@@ -182,20 +182,23 @@ async function startRailwayStreamAndPoll(streamId, projectId, userId, message) {
 }
 
 /**
- * Poll Railway backend every second for new events
+ * Poll Railway backend every second for new events using jobId
  */
-async function pollRailwayStream(streamId, railwayStreamId, railwayApiKey) {
-  const cache = streamCache.get(streamId);
+async function pollRailwayStream(jobId, railwayApiKey) {
+  const cache = streamCache.get(jobId);
   
   if (!cache) {
-    Logger.warn('streaming-pm', 'pollRailwayStream_cache_lost', { streamId });
+    Logger.warn('streaming-pm', 'pollRailwayStream_cache_lost', { jobId });
     return;
   }
 
   try {
-    Logger.info('streaming-pm', 'polling_railway', { streamId, lastEventIndex: cache.lastEventIndex });
+    Logger.info('streaming-pm', 'polling_railway', { 
+      jobId,
+      lastEventIndex: cache.lastEventIndex 
+    });
 
-    // Poll Railway for updates
+    // Poll Railway for updates using jobId as streamId
     const pollResponse = await fetch(
       'https://linkifico-v5-production.up.railway.app/api/stream-status',
       {
@@ -205,7 +208,7 @@ async function pollRailwayStream(streamId, railwayStreamId, railwayApiKey) {
           'x-api-key': railwayApiKey
         },
         body: JSON.stringify({
-          streamId: railwayStreamId,
+          streamId: jobId,  // Use jobId as streamId
           lastEventIndex: cache.lastEventIndex
         })
       }
@@ -217,29 +220,57 @@ async function pollRailwayStream(streamId, railwayStreamId, railwayApiKey) {
 
     const pollResult = await pollResponse.json();
 
+    Logger.info('streaming-pm', 'railway_poll_result', {
+      jobId,
+      success: pollResult.success,
+      complete: pollResult.complete,
+      hasEvents: !!pollResult.events,
+      eventCount: pollResult.events?.length || 0,
+      error: pollResult.error
+    });
+
+    // Handle stream not found - just keep polling (job might not have started yet)
+    if (!pollResult.success) {
+      Logger.info('streaming-pm', 'railway_stream_not_ready', { 
+        jobId,
+        message: 'Stream not ready yet, will retry' 
+      });
+      
+      // Don't mark as error - job might not have started yet
+      // Just continue polling
+      if (streamCache.has(jobId)) {
+        setTimeout(() => pollRailwayStream(jobId, railwayApiKey), 1000);
+      }
+      return;
+    }
+
     // Update cache with new events
-    if (pollResult.success && pollResult.events && pollResult.events.length > 0) {
+    if (pollResult.events && pollResult.events.length > 0) {
       cache.events.push(...pollResult.events);
       cache.lastEventIndex = pollResult.totalEvents;
       Logger.info('streaming-pm', 'received_events', { 
-        streamId, 
+        jobId, 
         newEvents: pollResult.events.length,
         totalEvents: cache.events.length 
       });
     }
 
-    // Check if complete
+    // Check if complete - streaming stops here
     if (pollResult.complete) {
       cache.complete = true;
       cache.error = pollResult.error;
       cache.finalResult = pollResult.finalResult;
-      Logger.info('streaming-pm', 'stream_complete', { streamId, totalEvents: cache.events.length });
-      return;
+      Logger.info('streaming-pm', 'stream_complete', { 
+        jobId, 
+        totalEvents: cache.events.length,
+        hasError: !!pollResult.error 
+      });
+      return;  // Stop polling - job is finished
     }
 
-    // Continue polling if not complete
-    if (streamCache.has(streamId)) {
-      setTimeout(() => pollRailwayStream(streamId, railwayStreamId, railwayApiKey), 1000);
+    // Continue polling if not complete (job still running)
+    if (streamCache.has(jobId)) {
+      setTimeout(() => pollRailwayStream(jobId, railwayApiKey), 1000);
     }
 
   } catch (error) {

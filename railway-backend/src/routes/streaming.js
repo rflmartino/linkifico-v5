@@ -9,10 +9,10 @@ const router = express.Router();
 
 /**
  * Start a streaming workflow - stores progress in Redis
- * Returns streamId that can be polled for updates
+ * Uses provided streamId (jobId) for consistency
  */
 router.post('/start-stream', async (req, res) => {
-  const { query, projectId, userId } = req.body;
+  const { streamId, query, projectId, userId } = req.body;
   
   if (!query || !projectId || !userId) {
     return res.status(400).json({ 
@@ -21,14 +21,14 @@ router.post('/start-stream', async (req, res) => {
     });
   }
 
-  // Generate unique stream ID
-  const streamId = `stream_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  // Use provided streamId or generate one
+  const finalStreamId = streamId || `stream_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
   
-  console.log('🌊 Starting polling-based stream:', streamId);
+  console.log('🌊 Starting polling-based stream:', finalStreamId);
 
   // Initialize stream in Redis
   const redis = await getRedisClient();
-  await redis.set(`stream:${streamId}`, JSON.stringify({
+  await redis.set(`stream:${finalStreamId}`, JSON.stringify({
     events: [],
     complete: false,
     error: null,
@@ -38,14 +38,14 @@ router.post('/start-stream', async (req, res) => {
   }), 'EX', 600); // Expire after 10 minutes
 
   // Start workflow in background
-  processWorkflowWithRedis(streamId, query, projectId, userId).catch(error => {
+  processWorkflowWithRedis(finalStreamId, query, projectId, userId).catch(error => {
     console.error('❌ Background workflow error:', error);
   });
 
   // Return stream ID immediately
   res.json({
     success: true,
-    streamId: streamId,
+    streamId: finalStreamId,
     message: 'Stream started - poll /stream-status for updates'
   });
 });
