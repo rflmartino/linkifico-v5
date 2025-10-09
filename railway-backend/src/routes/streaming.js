@@ -116,8 +116,8 @@ async function processWorkflowWithRedis(streamId, query, projectId, userId) {
     let projectData = await getProjectData(projectId);
     if (!projectData) {
       console.log(`📦 Creating new project for stream: ${projectId}`);
-      projectData = createProjectData(projectId, userId, {
-        name: 'Untitled Project'
+      projectData = await createProjectData(projectId, userId, {
+        name: 'New Project'
       });
       await saveProjectData(projectId, projectData);
     }
@@ -186,11 +186,16 @@ async function processWorkflowWithRedis(streamId, query, projectId, userId) {
         }
       }
       
+      // Get the latest project data to include name and email
+      const updatedProjectData = await getProjectData(projectId);
+      
       stream.finalResult = {
         projectData: {
-          ...finalState.projectData,
+          ...(finalState.projectData || updatedProjectData),
           aiResponse: aiResponse  // Ensure AI response is included
         },
+        projectName: (finalState.projectData || updatedProjectData)?.name || 'New Project',
+        projectEmail: (finalState.projectData || updatedProjectData)?.email || '',
         scopeData: finalState.scopeData,
         schedulerData: finalState.schedulerData,
         updateData: finalState.updateData,

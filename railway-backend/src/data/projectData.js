@@ -30,12 +30,48 @@ export const REDIS_KEYS = {
 // PROJECT DATA OPERATIONS
 // ============================================================================
 
+// Generate unique project email
+async function generateUniqueProjectEmail() {
+  const client = await getRedisClient();
+  let email;
+  let isUnique = false;
+  let attempts = 0;
+  const maxAttempts = 100; // Prevent infinite loop
+  
+  while (!isUnique && attempts < maxAttempts) {
+    const randomNum = Math.floor(100000 + Math.random() * 900000); // 6 digits (100000-999999)
+    email = `project-${randomNum}@linkifico.com`;
+    
+    // Check if this email already exists in Redis
+    const exists = await client.exists(`project_email:${email}`);
+    if (!exists) {
+      isUnique = true;
+      // Store the email to mark it as used
+      await client.set(`project_email:${email}`, '1');
+      console.log(`📧 Generated unique project email: ${email}`);
+    }
+    attempts++;
+  }
+  
+  if (!isUnique) {
+    // Fallback to timestamp-based email if we somehow can't find a unique one
+    email = `project-${Date.now()}@linkifico.com`;
+    await client.set(`project_email:${email}`, '1');
+    console.warn(`⚠️ Used timestamp-based email: ${email}`);
+  }
+  
+  return email;
+}
+
 // Create new project with clean structure
-export function createProjectData(projectId, userId, initialData = {}) {
+export async function createProjectData(projectId, userId, initialData = {}) {
+  const projectEmail = await generateUniqueProjectEmail();
+  
   return {
     id: projectId,
     userId: userId,
-    name: initialData.name || 'Untitled Project',
+    name: initialData.name || 'New Project',
+    email: projectEmail,
     status: 'draft', // draft, active, completed, archived
     
     // Scope (owned by Scope Agent)

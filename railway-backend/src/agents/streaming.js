@@ -2,6 +2,7 @@
 // Streaming workflow that emits events as agents work
 
 import { pmGraph } from './graph.js';
+import { getProjectData } from '../data/projectData.js';
 
 /**
  * Run workflow with streaming events
@@ -26,6 +27,30 @@ export async function runStreamingWorkflow(userQuery, projectId, userId, onEvent
 
     // Small delay to let event be stored
     await new Promise(resolve => setTimeout(resolve, 100));
+
+    // Get current project data and emit initial project info
+    const currentProjectData = await getProjectData(projectId);
+    if (currentProjectData) {
+      // Emit project name
+      if (currentProjectData.name) {
+        onEvent({
+          type: 'updateProjectName',
+          projectName: currentProjectData.name,
+          timestamp: new Date().toISOString()
+        });
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+
+      // Emit project email
+      if (currentProjectData.email) {
+        onEvent({
+          type: 'updateProjectEmail',
+          projectEmail: currentProjectData.email,
+          timestamp: new Date().toISOString()
+        });
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+    }
 
     // Emit supervisor start
     onEvent({
@@ -71,6 +96,28 @@ export async function runStreamingWorkflow(userQuery, projectId, userId, onEvent
       });
 
       await new Promise(resolve => setTimeout(resolve, 300));
+
+      // If scope agent updated the project name, emit an event
+      if (finalState.projectData?.name && finalState.projectData.name !== 'New Project') {
+        onEvent({
+          type: 'updateProjectName',
+          projectName: finalState.projectData.name,
+          message: `📝 Project renamed to: ${finalState.projectData.name}`,
+          timestamp: new Date().toISOString()
+        });
+        await new Promise(resolve => setTimeout(resolve, 200));
+      }
+
+      // Emit project email (always available after project creation)
+      if (finalState.projectData?.email) {
+        onEvent({
+          type: 'updateProjectEmail',
+          projectEmail: finalState.projectData.email,
+          message: `📧 Project email: ${finalState.projectData.email}`,
+          timestamp: new Date().toISOString()
+        });
+        await new Promise(resolve => setTimeout(resolve, 200));
+      }
     }
 
     if (finalState.schedulerData) {

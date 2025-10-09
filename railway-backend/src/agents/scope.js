@@ -32,6 +32,7 @@ Your role:
 - List concrete deliverables
 - Define success criteria
 - Create high-level project stages/phases
+- Generate a concise, professional project name (if current name is generic like "New Project")
 
 Current project: ${projectData.name}
 Current scope: ${JSON.stringify(projectData.scope, null, 2)}
@@ -39,6 +40,7 @@ Current stages: ${JSON.stringify(projectData.stages, null, 2)}
 
 Analyze the user's request and respond with JSON:
 {
+  "projectName": "Concise Professional Project Name",
   "scope": {
     "description": "clear project description",
     "objectives": ["measurable goal 1", "measurable goal 2"],
@@ -56,6 +58,12 @@ Analyze the user's request and respond with JSON:
   ],
   "reasoning": "why this scope makes sense"
 }
+
+Guidelines for projectName:
+- Keep it concise (3-6 words)
+- Make it descriptive and professional
+- Capture the essence of what the project is about
+- Examples: "E-Commerce Platform", "Mobile Fitness App", "Corporate Website Redesign"
 
 CRITICAL: Respond with ONLY valid JSON. No explanatory text before or after.`;
 
@@ -85,6 +93,13 @@ CRITICAL: Respond with ONLY valid JSON. No explanatory text before or after.`;
     projectData.scope = scopeData.scope;
     projectData.stages = scopeData.stages;
     projectData.status = 'active'; // Move from draft to active once scope is defined
+    
+    // Update project name if it's still generic and a new name was provided
+    if (scopeData.projectName && 
+        (projectData.name === 'New Project' || projectData.name === 'Untitled Project')) {
+      projectData.name = scopeData.projectName;
+      console.log(`📝 Project renamed to: ${projectData.name}`);
+    }
 
     // Save updated project
     await saveProjectData(projectId, projectData);

@@ -267,8 +267,8 @@ app.post('/api/process-message-job', async (req, res) => {
     let projectData = await getProjectData(projectId);
     if (!projectData) {
       console.log(`📦 Creating new project: ${projectId}`);
-      projectData = createProjectData(projectId, userId, {
-        name: 'Untitled Project'
+      projectData = await createProjectData(projectId, userId, {
+        name: 'New Project'
       });
       await saveProjectData(projectId, projectData);
     }
@@ -278,12 +278,18 @@ app.post('/api/process-message-job', async (req, res) => {
 
     console.log(`✅ Message job completed: ${job.id}`);
 
+    // Get the latest project data to ensure we have the most current name and email
+    const latestProjectData = await getProjectData(projectId);
+    const finalProjectData = result.projectData || latestProjectData || projectData;
+
     // Return the result
     res.json({ 
       success: true,
       result: {
         aiResponse: result.direct_answer || result.reasoning || 'Analysis complete',
-        projectData: result.projectData || projectData,
+        projectData: finalProjectData,
+        projectName: finalProjectData?.name || 'New Project',
+        projectEmail: finalProjectData?.email || '',
         analysis: result.analysis,
         scopeData: result.scopeData,
         schedulerData: result.schedulerData,
@@ -312,7 +318,7 @@ app.post('/api/process-init-job', async (req, res) => {
     const { projectId, userId, input } = job;
     
     // Create new project
-    const projectData = createProjectData(projectId, userId, {
+    const projectData = await createProjectData(projectId, userId, {
       name: input.projectName || 'New Project'
     });
     await saveProjectData(projectId, projectData);
@@ -323,11 +329,17 @@ app.post('/api/process-init-job', async (req, res) => {
 
     console.log(`✅ Init job completed: ${job.id}`);
 
+    // Get the latest project data to ensure we have the most current name and email
+    const latestProjectData = await getProjectData(projectId);
+    const finalProjectData = result.projectData || latestProjectData || projectData;
+
     res.json({ 
       success: true,
       result: {
         message: result.direct_answer || 'Project initialized',
-        projectData: result.projectData || projectData,
+        projectData: finalProjectData,
+        projectName: finalProjectData?.name || 'New Project',
+        projectEmail: finalProjectData?.email || '',
         analysis: result.analysis
       }
     });
@@ -366,12 +378,16 @@ app.post('/api/process-analyze-job', async (req, res) => {
 
     console.log(`✅ Analyze job completed: ${job.id}`);
 
+    const finalProjectData = result.projectData || projectData;
+
     res.json({ 
       success: true,
       result: {
         message: result.direct_answer || 'Analysis complete',
         analysis: result.analysis,
-        projectData: result.projectData || projectData
+        projectData: finalProjectData,
+        projectName: finalProjectData?.name || 'New Project',
+        projectEmail: finalProjectData?.email || ''
       }
     });
 
