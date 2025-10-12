@@ -72,7 +72,7 @@ router.post('/stream-status', async (req, res) => {
       return res.json({
         success: false,
         error: 'Stream not found or expired',
-        complete: true
+        complete: false  // Don't give up - let frontend retry
       });
     }
 
