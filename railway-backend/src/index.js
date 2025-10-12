@@ -94,8 +94,18 @@ function formatAiResponse(result) {
       aiResponse += `**Key Deliverables:**\n${scope.deliverables.map(del => `• ${del}`).join('\n')}\n\n`;
     }
     
+    if (scope?.budget) {
+      aiResponse += `**Budget:** ${scope.budget}\n\n`;
+    }
+    
+    if (scope?.timeline) {
+      aiResponse += `**Timeline:** ${scope.timeline.startDate} to ${scope.timeline.targetEndDate}\n\n`;
+    }
+    
     if (result.scopeData.stages && result.scopeData.stages.length > 0) {
-      aiResponse += `**Project Stages:**\n${result.scopeData.stages.map((stage, idx) => `${idx + 1}. ${stage.name}`).join('\n')}`;
+      aiResponse += `**Project Stages:**\n${result.scopeData.stages.map((stage, idx) => 
+        `${idx + 1}. ${stage.name} (${stage.status})`
+      ).join('\n')}`;
     }
   } else if (result.analysis) {
     aiResponse = result.analysis.summary || "Project analysis completed.";
@@ -103,6 +113,11 @@ function formatAiResponse(result) {
     aiResponse = result.direct_answer;
   } else if (result.reasoning) {
     aiResponse = result.reasoning;
+  } else if (result.messages && result.messages.length > 0) {
+    const lastMsg = result.messages[result.messages.length - 1];
+    if (lastMsg.role === 'assistant' && lastMsg.content) {
+      aiResponse = lastMsg.content;
+    }
   }
   
   return aiResponse;

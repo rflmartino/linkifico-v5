@@ -1,5 +1,5 @@
 // railway-backend/src/agents/scope.js
-// Scope Agent - Defines project scope, objectives, deliverables, and creates stages
+// Enhanced Scope Agent - Asks follow-up questions using the messages array
 
 import { ChatAnthropic } from "@langchain/anthropic";
 import { getProjectData, saveProjectData } from '../data/projectData.js';
@@ -24,29 +24,53 @@ export async function scopeAgent(state) {
     };
   }
 
-  const systemPrompt = `You are a Project Scope Definition Agent.
+  const systemPrompt = `You are a Project Scope Definition Agent with conversational capabilities.
 
 Your role:
-- Define clear project scope (what's included and excluded)
-- Identify key objectives and benefits
-- List concrete deliverables
-- Define success criteria
-- Create high-level project stages/phases
-- Generate a concise, professional project name (if current name is generic like "New Project")
+- Analyze user input to understand their project
+- Identify what critical information is MISSING
+- Ask intelligent follow-up questions to gather missing info
+- Only create full scope when you have enough information
 
 Current project: ${projectData.name}
 Current scope: ${JSON.stringify(projectData.scope, null, 2)}
 Current stages: ${JSON.stringify(projectData.stages, null, 2)}
 
-Analyze the user's request and respond with JSON:
+CRITICAL INFORMATION NEEDED:
+- Project type/description (what is being built/opened)
+- Timeline: Target completion/opening date
+- Budget: Total project budget
+- Key constraints: Location specifics, team size, existing resources
+
+DECISION LOGIC:
+1. Analyze ALL messages in conversation history to see what info you already have
+2. If MISSING critical information → Respond with "needsMoreInfo: true" and provide questions
+3. If you have ENOUGH information → Respond with "needsMoreInfo: false" and create full scope
+
+Respond with JSON in ONE of these formats:
+
+FORMAT 1 - Need More Info (return questions as text):
 {
+  "needsMoreInfo": true,
+  "responseText": "Great! To create a solid project plan, I need a few more details:\n\n1. What's your target opening/completion date?\n2. What's your total budget for this project?\n3. Do you have a location secured?",
+  "reasoning": "why these questions are needed"
+}
+
+FORMAT 2 - Ready to Create Scope:
+{
+  "needsMoreInfo": false,
   "projectName": "Concise Professional Project Name",
   "scope": {
     "description": "clear project description",
     "objectives": ["measurable goal 1", "measurable goal 2"],
     "deliverables": ["concrete deliverable 1", "concrete deliverable 2"],
     "outOfScope": ["what we're NOT doing"],
-    "successCriteria": ["how we measure success"]
+    "successCriteria": ["how we measure success"],
+    "budget": "£500,000" or null,
+    "timeline": {
+      "startDate": "2025-11-01",
+      "targetEndDate": "2026-06-01"
+    }
   },
   "stages": [
     {
@@ -59,20 +83,20 @@ Analyze the user's request and respond with JSON:
   "reasoning": "why this scope makes sense"
 }
 
-Guidelines for projectName:
-- Keep it concise (3-6 words)
-- Make it descriptive and professional
-- Capture the essence of what the project is about
-- Examples: "E-Commerce Platform", "Mobile Fitness App", "Corporate Website Redesign"
+GUIDELINES:
+- Be conversational and helpful in questions
+- Ask specific questions, not vague ones
+- Don't ask about things you can reasonably infer
+- Questions should be actionable and clear
+- Prioritize: budget, timeline, location status
+- Only ask 2-4 questions at a time (don't overwhelm)
 
 CRITICAL: Respond with ONLY valid JSON. No explanatory text before or after.`;
-
-  const lastUserMessage = messages[messages.length - 1];
 
   try {
     const response = await model.invoke([
       { role: "system", content: systemPrompt },
-      { role: "user", content: lastUserMessage.content },
+      ...messages, // Pass full conversation history
     ]);
 
     // Parse response
@@ -89,26 +113,57 @@ CRITICAL: Respond with ONLY valid JSON. No explanatory text before or after.`;
       };
     }
 
-    // Update project data
-    projectData.scope = scopeData.scope;
-    projectData.stages = scopeData.stages;
-    projectData.status = 'active'; // Move from draft to active once scope is defined
-    
-    // Update project name if it's still generic and a new name was provided
-    if (scopeData.projectName && 
-        (projectData.name === 'New Project' || projectData.name === 'Untitled Project')) {
-      projectData.name = scopeData.projectName;
-      console.log(`📝 Project renamed to: ${projectData.name}`);
+    // CASE 1: Need more information - add questions to messages
+    if (scopeData.needsMoreInfo === true) {
+      console.log(`❓ Scope agent needs more info, asking questions`);
+      
+      // Add the questions as an assistant message
+      const questionsMessage = {
+        role: "assistant",
+        content: scopeData.responseText
+      };
+      
+      return {
+        ...state,
+        messages: [...messages, questionsMessage],
+        projectData: projectData,
+        next_agent: "end" // End workflow, wait for user response
+      };
     }
 
-    // Save updated project
-    await saveProjectData(projectId, projectData);
+    // CASE 2: Have enough info - create full scope
+    if (scopeData.needsMoreInfo === false && scopeData.scope) {
+      console.log(`✅ Scope agent has enough info, creating full scope`);
+      
+      // Update project data
+      projectData.scope = scopeData.scope;
+      projectData.stages = scopeData.stages;
+      projectData.status = 'active';
+      
+      // Update project name if it's still generic
+      if (scopeData.projectName && 
+          (projectData.name === 'New Project' || projectData.name === 'Untitled Project')) {
+        projectData.name = scopeData.projectName;
+        console.log(`📝 Project renamed to: ${projectData.name}`);
+      }
 
+      // Save updated project
+      await saveProjectData(projectId, projectData);
+
+      return {
+        ...state,
+        messages: [...messages, { role: "assistant", content: response.content }],
+        projectData: projectData,
+        scopeData: scopeData,
+        next_agent: "end"
+      };
+    }
+
+    // CASE 3: Unexpected format
+    console.error("Unexpected scope response format:", scopeData);
     return {
       ...state,
-      messages: [...messages, { role: "assistant", content: response.content }],
-      projectData: projectData,
-      scopeData: scopeData,
+      error: "Unexpected response format from scope agent",
       next_agent: "end"
     };
 

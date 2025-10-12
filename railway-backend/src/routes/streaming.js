@@ -195,8 +195,18 @@ async function processWorkflowWithRedis(streamId, query, projectId, userId) {
           aiResponse += `**Key Deliverables:**\n${scope.deliverables.map(del => `• ${del}`).join('\n')}\n\n`;
         }
         
+        if (scope?.budget) {
+          aiResponse += `**Budget:** ${scope.budget}\n\n`;
+        }
+        
+        if (scope?.timeline) {
+          aiResponse += `**Timeline:** ${scope.timeline.startDate} to ${scope.timeline.targetEndDate}\n\n`;
+        }
+        
         if (finalState.scopeData.stages && finalState.scopeData.stages.length > 0) {
-          aiResponse += `**Project Stages:**\n${finalState.scopeData.stages.map((stage, idx) => `${idx + 1}. ${stage.name}`).join('\n')}`;
+          aiResponse += `**Project Stages:**\n${finalState.scopeData.stages.map((stage, idx) => 
+            `${idx + 1}. ${stage.name} (${stage.status})`
+          ).join('\n')}`;
         }
       } else if (finalState.analysis) {
         aiResponse = finalState.analysis.summary || "Project analysis completed.";
