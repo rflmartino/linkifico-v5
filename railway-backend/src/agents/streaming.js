@@ -77,10 +77,15 @@ export async function runStreamingWorkflow(userQuery, projectId, userId, onEvent
 
       await new Promise(resolve => setTimeout(resolve, 500));
 
+      // Determine message based on whether scope is complete or asking for info
+      const scopeCompleteMsg = finalState.scopeData.needsMoreInfo === true
+        ? '💬 Scope Agent responded - awaiting more information'
+        : '✅ Scope Agent completed - Project scope and stages defined';
+      
       onEvent({
         type: 'agent_complete',
         agent: 'scope',
-        message: '✅ Scope Agent completed - Project scope and stages defined',
+        message: scopeCompleteMsg,
         data: finalState.scopeData,
         timestamp: new Date().toISOString()
       });

@@ -185,34 +185,46 @@ async function processWorkflowWithRedis(streamId, query, projectId, userId) {
       let aiResponse = "I've analyzed your project and created the initial structure.";
       
       if (finalState.scopeData) {
-        // Format a comprehensive response when scope is defined
-        const scope = finalState.scopeData.scope;
-        aiResponse = `✅ **Project Scope Defined**\n\n`;
-        
-        if (scope?.description) {
-          aiResponse += `**Overview:** ${scope.description}\n\n`;
-        }
-        
-        if (scope?.objectives && scope.objectives.length > 0) {
-          aiResponse += `**Objectives:**\n${scope.objectives.map(obj => `• ${obj}`).join('\n')}\n\n`;
-        }
-        
-        if (scope?.deliverables && scope.deliverables.length > 0) {
-          aiResponse += `**Key Deliverables:**\n${scope.deliverables.map(del => `• ${del}`).join('\n')}\n\n`;
-        }
-        
-        if (scope?.budget) {
-          aiResponse += `**Budget:** ${scope.budget}\n\n`;
-        }
-        
-        if (scope?.timeline) {
-          aiResponse += `**Timeline:** ${scope.timeline.startDate} to ${scope.timeline.targetEndDate}\n\n`;
-        }
-        
-        if (finalState.scopeData.stages && finalState.scopeData.stages.length > 0) {
-          aiResponse += `**Project Stages:**\n${finalState.scopeData.stages.map((stage, idx) => 
-            `${idx + 1}. ${stage.name} (${stage.status})`
-          ).join('\n')}`;
+        // CHECK: Is the agent asking for more info or is scope complete?
+        if (finalState.scopeData.needsMoreInfo === true && finalState.scopeData.responseText) {
+          // Agent is asking questions - use the responseText
+          aiResponse = finalState.scopeData.responseText;
+          console.log(`❓ Scope agent asking for info: ${aiResponse.substring(0, 100)}...`);
+        } else if (finalState.scopeData.scope) {
+          // Scope is complete - format a comprehensive response
+          const scope = finalState.scopeData.scope;
+          aiResponse = `✅ **Project Scope Defined**\n\n`;
+          
+          if (scope?.description) {
+            aiResponse += `**Overview:** ${scope.description}\n\n`;
+          }
+          
+          if (scope?.objectives && scope.objectives.length > 0) {
+            aiResponse += `**Objectives:**\n${scope.objectives.map(obj => `• ${obj}`).join('\n')}\n\n`;
+          }
+          
+          if (scope?.deliverables && scope.deliverables.length > 0) {
+            aiResponse += `**Key Deliverables:**\n${scope.deliverables.map(del => `• ${del}`).join('\n')}\n\n`;
+          }
+          
+          if (scope?.budget) {
+            aiResponse += `**Budget:** ${scope.budget}\n\n`;
+          }
+          
+          if (scope?.timeline) {
+            aiResponse += `**Timeline:** ${scope.timeline.startDate} to ${scope.timeline.targetEndDate}\n\n`;
+          }
+          
+          if (finalState.scopeData.stages && finalState.scopeData.stages.length > 0) {
+            aiResponse += `**Project Stages:**\n${finalState.scopeData.stages.map((stage, idx) => 
+              `${idx + 1}. ${stage.name} (${stage.status})`
+            ).join('\n')}`;
+          }
+          
+          console.log(`✅ Scope complete: ${aiResponse.substring(0, 100)}...`);
+        } else {
+          // Fallback - shouldn't happen but just in case
+          console.warn(`⚠️ scopeData exists but no responseText or scope found`);
         }
       } else if (finalState.analysis) {
         aiResponse = finalState.analysis.summary || "Project analysis completed.";
