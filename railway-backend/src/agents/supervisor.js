@@ -9,6 +9,22 @@ const model = new ChatAnthropic({
 export async function supervisorAgent(state) {
   const { messages, projectData } = state;
 
+  // Determine workflow state
+  const hasStages = projectData?.stages && projectData.stages.length > 0;
+  const hasScope = projectData?.scope && projectData.scope.description;
+  const hasTasks = projectData?.tasks && projectData.tasks.length > 0;
+  
+  let workflowState = "INITIAL";
+  if (!hasStages && !hasScope) {
+    workflowState = "NEEDS_SCOPE";
+  } else if (hasStages && !hasScope) {
+    workflowState = "SCOPE_IN_PROGRESS";
+  } else if (hasScope && !hasTasks) {
+    workflowState = "NEEDS_TASKS";
+  } else {
+    workflowState = "ACTIVE";
+  }
+
   const systemPrompt = `You are a Project Management Supervisor Agent.
 
 Your role:
@@ -24,15 +40,33 @@ Available agents:
 - 'analyzer': Analyze project completeness, identify gaps
 - 'end': Finish workflow (use for general questions or when done)
 
-Current project context: ${JSON.stringify(projectData || {}, null, 2)}
+WORKFLOW STATE: ${workflowState}
+- NEEDS_SCOPE: No stages yet → route to 'scope'
+- SCOPE_IN_PROGRESS: Stages exist but scope not finalized → route to 'scope'
+- NEEDS_TASKS: Scope complete but no tasks → route to 'scheduler'
+- ACTIVE: Project has scope and tasks
+
+Current project state:
+- Has stages: ${hasStages}
+- Has scope: ${hasScope}
+- Has tasks: ${hasTasks}
+Project data: ${JSON.stringify(projectData || {}, null, 2)}
+
+ROUTING LOGIC:
+- If NEEDS_SCOPE or SCOPE_IN_PROGRESS → route to 'scope' (unless explicit budget/task request)
+- If NEEDS_TASKS → route to 'scheduler'
+- If user mentions budget/costs → 'budget'
+- If user asks for analysis/gaps → 'analyzer'
+- If task updates → 'taskUpdater'
+- If general question → 'end' with direct_answer
 
 Examples:
-- "Create a toy store project" → 'scope' (needs scope definition)
-- "Add tasks for website development" → 'scheduler' (needs task creation)
-- "Mark homepage design complete" → 'taskUpdater' (updating existing task)
-- "We spent $5k on inventory" → 'budget' (budget update)
-- "What's missing from this project?" → 'analyzer' (gap analysis)
-- "What is PRINCE2?" → 'end' (general question, answer directly)
+- State: NEEDS_SCOPE, Message: "Create toy store" → 'scope'
+- State: NEEDS_SCOPE, Message: "Target date is Nov 30" → 'scope' (continuing scope definition)
+- State: NEEDS_TASKS, Message: "Add development tasks" → 'scheduler'
+- State: ACTIVE, Message: "Mark task complete" → 'taskUpdater'
+- State: ACTIVE, Message: "We spent $5k" → 'budget'
+- Any state, Message: "What is PRINCE2?" → 'end' (general question)
 
 For general questions not requiring project modification, answer directly and route to 'end'.
 
