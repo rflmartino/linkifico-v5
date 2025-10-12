@@ -175,6 +175,12 @@ async function processWorkflowWithRedis(streamId, query, projectId, userId) {
       const stream = JSON.parse(streamData);
       stream.complete = true;
       
+      console.log(`🔍 Checking finalState for aiResponse:`);
+      console.log(`   - Has scopeData: ${!!finalState.scopeData}`);
+      console.log(`   - Has analysis: ${!!finalState.analysis}`);
+      console.log(`   - Has direct_answer: ${!!finalState.direct_answer}`);
+      console.log(`   - Has messages: ${!!finalState.messages}, length: ${finalState.messages?.length || 0}`);
+      
       // Create AI response from the workflow results
       let aiResponse = "I've analyzed your project and created the initial structure.";
       
@@ -216,8 +222,15 @@ async function processWorkflowWithRedis(streamId, query, projectId, userId) {
         const lastMsg = finalState.messages[finalState.messages.length - 1];
         if (lastMsg.role === 'assistant' && lastMsg.content) {
           aiResponse = lastMsg.content;
+          console.log(`📝 Using message content as aiResponse: ${aiResponse.substring(0, 100)}...`);
+        } else {
+          console.warn(`⚠️ Last message exists but no assistant content found`);
         }
+      } else {
+        console.warn(`⚠️ No scopeData, analysis, direct_answer, or messages found in finalState`);
       }
+      
+      console.log(`🎯 Final aiResponse being sent: ${aiResponse.substring(0, 150)}...`);
       
       // Get the latest project data to include name and email
       const updatedProjectData = await getProjectData(projectId);
@@ -235,6 +248,10 @@ async function processWorkflowWithRedis(streamId, query, projectId, userId) {
         budgetData: finalState.budgetData,
         analysis: finalState.analysis
       };
+      
+      console.log(`💾 Storing finalResult with aiResponse (${aiResponse.length} chars)`);
+      console.log(`   Project: ${stream.finalResult.projectName}`);
+      console.log(`   Email: ${stream.finalResult.projectEmail}`);
       
       await redis.set(`stream:${streamId}`, JSON.stringify(stream), 'EX', 600);
       console.log(`✅ Stream ${streamId} completed with ${stream.events.length} events`);
