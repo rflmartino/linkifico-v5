@@ -246,7 +246,12 @@ Current Scope: ${JSON.stringify(projectData.scope, null, 2)}`;
     }
 
     // CASE 3: Unexpected format
-    console.error("Unexpected scope response format:", scopeData);
+    console.error("❌ Unexpected scope response format:", scopeData);
+    console.error("❌ Type:", typeof scopeData);
+    console.error("❌ Is Array:", Array.isArray(scopeData));
+    console.error("❌ Raw AI response:", response.content);
+    console.error("❌ Full scopeData:", JSON.stringify(scopeData, null, 2));
+    
     return {
       ...state,
       error: "Unexpected response format from scope agent",

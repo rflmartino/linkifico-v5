@@ -4,11 +4,30 @@
 export function parseResponseContent(response) {
   try {
     // Handle content as string or array
-    let contentText = typeof response.content === 'string' 
-      ? response.content 
-      : (Array.isArray(response.content) && response.content.length > 0)
-        ? response.content[0].text || JSON.stringify(response.content)
-        : JSON.stringify(response.content);
+    let contentText;
+    
+    if (typeof response.content === 'string') {
+      contentText = response.content;
+    } else if (Array.isArray(response.content)) {
+      if (response.content.length === 0) {
+        console.error("❌ Response content is empty array!");
+        throw new Error("Response content is empty array");
+      }
+      // Extract text from content blocks
+      contentText = response.content
+        .map(block => block.text || block.content || '')
+        .join('');
+      
+      if (!contentText) {
+        console.error("❌ Could not extract text from content blocks:", response.content);
+        throw new Error("Could not extract text from content array");
+      }
+    } else {
+      console.error("❌ Unexpected content type:", typeof response.content);
+      contentText = JSON.stringify(response.content);
+    }
+    
+    console.log(`📦 Extracted content (${contentText.length} chars):`, contentText.substring(0, 200));
     
     // Remove markdown code blocks
     const cleanContent = contentText
