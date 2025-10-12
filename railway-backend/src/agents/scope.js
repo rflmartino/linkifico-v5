@@ -103,7 +103,28 @@ GUIDELINES FOR SCOPE CREATION:
 - Set realistic timeline based on target date
 - Structure budget framework for allocation
 
-CRITICAL: Respond with ONLY valid JSON. No explanatory text before or after.`;
+═══════════════════════════════════════════════════════════════
+CRITICAL JSON REQUIREMENT - READ CAREFULLY:
+═══════════════════════════════════════════════════════════════
+
+Your ENTIRE response must be ONLY the JSON object.
+
+DO NOT add ANY text before the JSON.
+DO NOT add ANY text after the JSON.
+DO NOT add explanations after the closing }.
+DO NOT be helpful with additional context.
+
+Your response should start with { and end with }.
+NOTHING ELSE.
+
+Example of CORRECT response:
+{"needsMoreInfo":true,"responseText":"Question here","reasoning":"why"}
+
+Example of INCORRECT response (DO NOT DO THIS):
+{"needsMoreInfo":true,"responseText":"Question here","reasoning":"why"}
+Let me explain why I asked these questions...  ← THIS IS WRONG
+
+═══════════════════════════════════════════════════════════════`;
 
   try {
     const response = await model.invoke([
