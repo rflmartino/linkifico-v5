@@ -52,9 +52,11 @@ Respond with JSON in ONE of these formats:
 FORMAT 1 - Need More Info (return questions as text):
 {
   "needsMoreInfo": true,
-  "responseText": "Great! To create a solid project plan, I need a few more details:\n\n1. What's your target opening/completion date?\n2. What's your total budget for this project?\n3. Do you have a location secured?",
+  "responseText": "Great! To create a solid project plan, I need a few more details:\\n\\n1. What's your target opening/completion date?\\n2. What's your total budget for this project?\\n3. Do you have a location secured?",
   "reasoning": "why these questions are needed"
 }
+
+IMPORTANT: In responseText, use \\n for newlines, NOT actual line breaks. Keep all JSON on valid single lines with escaped characters.
 
 FORMAT 2 - Ready to Create Scope:
 {
@@ -104,13 +106,19 @@ CRITICAL: Respond with ONLY valid JSON. No explanatory text before or after.`;
     try {
       scopeData = parseResponseContent(response);
     } catch (e) {
-      console.error("Failed to parse scope response:", e);
-      return {
-        ...state,
-        error: "Failed to parse scope data",
-        rawResponse: response.content,
-        next_agent: "end"
-      };
+      console.error("❌ SCOPE AGENT JSON PARSE ERROR");
+      console.error("Parse error:", e.message);
+      console.error("Raw AI response:", response.content);
+      console.error("\n⚠️  The AI returned invalid JSON. Common issues:");
+      console.error("   - Actual newlines in JSON strings (use \\n instead)");
+      console.error("   - Unescaped quotes or special characters");
+      console.error("   - Missing commas or brackets");
+      
+      throw new Error(
+        `Scope Agent failed to return valid JSON. ` +
+        `Parse error: ${e.message}. ` +
+        `AI returned: ${response.content.substring(0, 200)}...`
+      );
     }
 
     // CASE 1: Need more information - add questions to messages
