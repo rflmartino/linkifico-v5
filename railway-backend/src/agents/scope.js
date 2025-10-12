@@ -170,6 +170,9 @@ Current Scope: ${JSON.stringify(projectData.scope, null, 2)}`;
 
   try {
     // ONE AI CALL with the focused prompt
+    console.log(`📨 Scope agent invoking Claude with ${messages.length} messages`);
+    console.log(`📨 Messages:`, messages.map(m => ({ role: m.role, contentLength: m.content?.length || 0 })));
+    
     const response = await model.invoke([
       { role: "system", content: contextualPrompt },
       ...messages, // Pass full conversation history
@@ -182,12 +185,31 @@ Current Scope: ${JSON.stringify(projectData.scope, null, 2)}`;
     } catch (e) {
       console.error("❌ SCOPE AGENT JSON PARSE ERROR");
       console.error("Parse error:", e.message);
+      console.error("Raw AI response type:", typeof response.content);
       console.error("Raw AI response:", response.content);
+      
+      // Handle empty array response from Claude API
+      if (Array.isArray(response.content) && response.content.length === 0) {
+        console.error("❌ Claude API returned empty response - possible rate limit or API error");
+        return {
+          ...state,
+          messages: [...messages, { 
+            role: "assistant", 
+            content: "I encountered an API error. Please try again." 
+          }],
+          next_agent: "end",
+          error: "Claude API returned empty response"
+        };
+      }
+      
+      const contentStr = typeof response.content === 'string' 
+        ? response.content 
+        : JSON.stringify(response.content);
       
       throw new Error(
         `Scope Agent failed to return valid JSON. ` +
         `Parse error: ${e.message}. ` +
-        `AI returned: ${response.content.substring(0, 200)}...`
+        `AI returned: ${contentStr.substring(0, 200)}...`
       );
     }
 

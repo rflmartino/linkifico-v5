@@ -109,7 +109,8 @@ Respond with JSON only:
 
   return {
     ...state,
-    messages: [...messages, { role: "assistant", content: response.content }],
+    // Don't add supervisor routing to messages - it's internal routing, not conversation
+    messages: messages,
     next_agent: decision.next_agent,
     reasoning: decision.reasoning,
     direct_answer: decision.direct_answer || null,
