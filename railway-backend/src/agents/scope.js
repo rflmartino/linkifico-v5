@@ -103,28 +103,14 @@ GUIDELINES FOR SCOPE CREATION:
 - Set realistic timeline based on target date
 - Structure budget framework for allocation
 
-═══════════════════════════════════════════════════════════════
-CRITICAL JSON REQUIREMENT - READ CAREFULLY:
-═══════════════════════════════════════════════════════════════
+OUTPUT FORMAT:
+Return ONLY a single JSON object. Your response must be valid JSON that can be parsed directly.
+Start your response with { and end with }.
 
-Your ENTIRE response must be ONLY the JSON object.
+CORRECT RESPONSE EXAMPLES:
+{"needsMoreInfo":true,"responseText":"When do you plan to complete this?\\nWhat is your budget?","reasoning":"need timeline and budget"}
 
-DO NOT add ANY text before the JSON.
-DO NOT add ANY text after the JSON.
-DO NOT add explanations after the closing }.
-DO NOT be helpful with additional context.
-
-Your response should start with { and end with }.
-NOTHING ELSE.
-
-Example of CORRECT response:
-{"needsMoreInfo":true,"responseText":"Question here","reasoning":"why"}
-
-Example of INCORRECT response (DO NOT DO THIS):
-{"needsMoreInfo":true,"responseText":"Question here","reasoning":"why"}
-Let me explain why I asked these questions...  ← THIS IS WRONG
-
-═══════════════════════════════════════════════════════════════`;
+{"needsMoreInfo":false,"projectName":"Toy Store Launch","scope":{...},"stages":[...],"reasoning":"sufficient information provided"}`;
 
   try {
     const response = await model.invoke([
@@ -132,24 +118,48 @@ Let me explain why I asked these questions...  ← THIS IS WRONG
       ...messages, // Pass full conversation history
     ]);
 
-    // Parse response
+    // Parse response with defensive JSON extraction
     let scopeData;
     try {
       scopeData = parseResponseContent(response);
     } catch (e) {
-      console.error("❌ SCOPE AGENT JSON PARSE ERROR");
-      console.error("Parse error:", e.message);
-      console.error("Raw AI response:", response.content);
-      console.error("\n⚠️  The AI returned invalid JSON. Common issues:");
-      console.error("   - Actual newlines in JSON strings (use \\n instead)");
-      console.error("   - Unescaped quotes or special characters");
-      console.error("   - Missing commas or brackets");
+      // Defensive parsing: extract JSON from response even if there's extra text
+      console.log("⚠️ Initial parse failed, attempting defensive JSON extraction...");
       
-      throw new Error(
-        `Scope Agent failed to return valid JSON. ` +
-        `Parse error: ${e.message}. ` +
-        `AI returned: ${response.content.substring(0, 200)}...`
-      );
+      let contentStr = typeof response.content === 'string' 
+        ? response.content 
+        : JSON.stringify(response.content);
+      
+      // Find the first { and last }
+      const firstBrace = contentStr.indexOf('{');
+      const lastBrace = contentStr.lastIndexOf('}');
+      
+      if (firstBrace === -1 || lastBrace === -1 || firstBrace >= lastBrace) {
+        console.error("❌ SCOPE AGENT: No valid JSON object found in response");
+        console.error("Raw response:", contentStr);
+        throw new Error(
+          `Scope Agent failed to return valid JSON. ` +
+          `No JSON object found in response. ` +
+          `Response: ${contentStr.substring(0, 200)}...`
+        );
+      }
+      
+      // Extract just the JSON portion
+      const jsonStr = contentStr.substring(firstBrace, lastBrace + 1);
+      
+      try {
+        scopeData = JSON.parse(jsonStr);
+        console.log("✅ Successfully extracted JSON from response");
+      } catch (parseError) {
+        console.error("❌ SCOPE AGENT: Failed to parse extracted JSON");
+        console.error("Extracted JSON:", jsonStr);
+        console.error("Parse error:", parseError.message);
+        throw new Error(
+          `Scope Agent failed to parse JSON. ` +
+          `Parse error: ${parseError.message}. ` +
+          `Extracted: ${jsonStr.substring(0, 200)}...`
+        );
+      }
     }
 
     // CASE 1: Need more information - add questions to messages
