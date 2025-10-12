@@ -72,9 +72,21 @@ export const pollStreamEvents = webMethod(
   Permissions.Anyone,
   async (jobId, lastEventIndex = 0) => {
     try {
+      Logger.info('streaming-pm', 'pollStreamEvents_called', { 
+        jobId, 
+        lastEventIndex,
+        cacheSize: streamCache.size,
+        cacheHasJob: streamCache.has(jobId)
+      });
+      
       const cache = streamCache.get(jobId);
       
       if (!cache) {
+        Logger.warn('streaming-pm', 'pollStreamEvents_cache_not_found', { 
+          jobId,
+          cacheKeys: Array.from(streamCache.keys()),
+          cacheSize: streamCache.size
+        });
         return {
           success: false,
           error: 'Stream not found or expired',
@@ -84,6 +96,14 @@ export const pollStreamEvents = webMethod(
 
       // Get new events since lastEventIndex
       const newEvents = cache.events.slice(lastEventIndex);
+      
+      Logger.info('streaming-pm', 'pollStreamEvents_success', { 
+        jobId, 
+        newEventCount: newEvents.length,
+        totalEvents: cache.events.length,
+        complete: cache.complete,
+        hasFinalResult: !!cache.finalResult
+      });
       
       return {
         success: true,
