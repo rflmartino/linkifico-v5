@@ -1,5 +1,5 @@
 // railway-backend/src/agents/scope.js
-// Enhanced Scope Agent - Project Management focused
+// Optimized Scope Agent - Uses code logic to select focused prompts based on state
 
 import { ChatAnthropic } from "@langchain/anthropic";
 import { getProjectData, saveProjectData } from '../data/projectData.js';
@@ -10,6 +10,116 @@ const model = new ChatAnthropic({
   temperature: 0,
   anthropicApiKey: process.env.ANTHROPIC_API_KEY,
 });
+
+// PROMPT 1: Gather info and create stages
+const GATHER_AND_CREATE_PROMPT = `You are a Project Scope Definition Agent.
+
+Current mode: GATHER INFO AND CREATE STAGES
+
+Your job:
+- Gather essential project information: goal, timeline, budget
+- When you have enough info, create project stages
+- Present stages and ask for user approval
+
+REQUIRED INFO:
+- Project type/goal
+- Target completion date
+- Total budget
+
+RESPONSE FORMAT - Need Info:
+{
+  "needsMoreInfo": true,
+  "responseText": "To create your project plan, I need:\\n\\n1. When do you plan to complete this?\\n2. What's your total budget?",
+  "reasoning": "missing timeline and budget"
+}
+
+RESPONSE FORMAT - Create Stages:
+{
+  "needsMoreInfo": true,
+  "responseText": "I've created 5 stages for your project:\\n\\n1. Stage Name\\n2. Stage Name\\n...\\n\\nAre you happy with these stages? If yes, I'll create detailed tasks and allocate your budget.",
+  "reasoning": "presenting stages for approval",
+  "stages": [
+    {
+      "id": "stage_1",
+      "name": "Stage Name",
+      "order": 1,
+      "status": "not_started"
+    }
+  ]
+}
+
+GUIDELINES:
+- Ask focused questions about timeline, budget, and project goals
+- Create 3-6 logical stages based on project type
+- Always ask if user is happy with stages
+- Explain next steps (task creation and budget allocation)
+
+Use \\n for newlines. Respond with ONLY valid JSON.`;
+
+// PROMPT 2: Modify stages or finalize scope
+const MODIFY_AND_APPROVE_PROMPT = `You are a Project Scope Definition Agent.
+
+Current mode: MODIFY STAGES OR FINALIZE SCOPE
+
+Stages already exist. The user is either:
+1. Requesting modifications to stages
+2. Approving the stages
+
+Your job:
+- If user wants changes, modify the stages and ask for approval again
+- If user approves, create the complete scope and finish
+
+RESPONSE FORMAT - Modify Stages:
+{
+  "needsMoreInfo": true,
+  "responseText": "I've updated the stages:\\n\\n1. Stage Name\\n2. Stage Name\\n...\\n\\nAre you happy now?",
+  "reasoning": "modified stages based on feedback",
+  "stages": [
+    {
+      "id": "stage_1",
+      "name": "Updated Stage Name",
+      "order": 1,
+      "status": "not_started"
+    }
+  ]
+}
+
+RESPONSE FORMAT - User Approved:
+{
+  "needsMoreInfo": false,
+  "projectName": "Professional Project Name",
+  "scope": {
+    "description": "clear project description",
+    "objectives": ["measurable goal 1", "measurable goal 2"],
+    "deliverables": ["concrete deliverable 1", "concrete deliverable 2"],
+    "outOfScope": ["what we're NOT doing"],
+    "successCriteria": ["how we measure success"],
+    "budget": "USD 40,000",
+    "timeline": {
+      "startDate": "2025-10-12",
+      "targetEndDate": "2026-04-12"
+    }
+  },
+  "stages": [
+    {
+      "id": "stage_1",
+      "name": "Stage Name",
+      "order": 1,
+      "status": "not_started"
+    }
+  ],
+  "reasoning": "user approved, scope complete"
+}
+
+APPROVAL DETECTION:
+Look for: "yes", "looks good", "perfect", "approve", "proceed", "continue", "go ahead"
+
+GUIDELINES:
+- Modify stages based on user feedback
+- When user approves, create complete scope with objectives, deliverables, timeline, budget
+- Set needsMoreInfo: false only when user approves
+
+Use \\n for newlines. Respond with ONLY valid JSON.`;
 
 export async function scopeAgent(state) {
   const { messages, projectId, userId } = state;
@@ -24,167 +134,94 @@ export async function scopeAgent(state) {
     };
   }
 
-  const systemPrompt = `You are a Project Scope Definition Agent focused on project management essentials.
+  // DECISION LOGIC: Pick the right prompt based on state
+  let systemPrompt;
+  const hasStages = projectData.stages && projectData.stages.length > 0;
+  const hasScope = projectData.scope && projectData.scope.description;
 
-Your role:
-- Understand the project goal and deliverables
-- Define project stages/phases
-- Establish timeline structure
-- Set up budget framework
+  if (!hasStages) {
+    // No stages yet - gather info and create stages
+    console.log(`📋 Scope Agent Mode: GATHER_AND_CREATE`);
+    systemPrompt = GATHER_AND_CREATE_PROMPT;
+  } else if (hasStages && !hasScope) {
+    // Stages exist but scope not finalized - modify or approve
+    console.log(`📋 Scope Agent Mode: MODIFY_AND_APPROVE`);
+    systemPrompt = MODIFY_AND_APPROVE_PROMPT;
+  } else {
+    // Scope is complete - shouldn't be here
+    console.log(`⚠️ Scope Agent: Scope already complete`);
+    return {
+      ...state,
+      messages: [...messages, { 
+        role: "assistant", 
+        content: "The project scope is already defined. How can I help you further?" 
+      }],
+      next_agent: "end"
+    };
+  }
 
-Current project: ${projectData.name}
-Current scope: ${JSON.stringify(projectData.scope, null, 2)}
-Current stages: ${JSON.stringify(projectData.stages, null, 2)}
+  // Add current project context to the prompt
+  const contextualPrompt = `${systemPrompt}
 
-INFORMATION NEEDED TO CREATE PROJECT STRUCTURE:
-- Project goal/description (what is being created or opened)
-- Target completion date (when it needs to be done)
-- Total budget (available funds)
-
-DECISION LOGIC:
-1. Review ALL messages in conversation history to see what info you already have
-2. If MISSING critical information → Ask for what's missing (needsMoreInfo: true)
-3. If you have ENOUGH information → Create project structure (needsMoreInfo: false)
-
-When you have enough information, generate:
-- Project stages/phases appropriate for this project type
-- High-level timeline based on target date
-- Budget framework
-
-Respond with JSON in ONE of these formats:
-
-FORMAT 1 - Need More Info:
-{
-  "needsMoreInfo": true,
-  "responseText": "To create your project plan, I need:\\n\\n1. When do you plan to open/complete this?\\n2. What's your total budget?",
-  "reasoning": "why these questions are needed"
-}
-
-IMPORTANT: In responseText, use \\n for newlines. Keep all JSON valid.
-
-FORMAT 2 - Ready to Create Scope:
-{
-  "needsMoreInfo": false,
-  "projectName": "Concise Professional Project Name",
-  "scope": {
-    "description": "clear project description",
-    "objectives": ["measurable goal 1", "measurable goal 2"],
-    "deliverables": ["concrete deliverable 1", "concrete deliverable 2"],
-    "outOfScope": ["what we're NOT doing"],
-    "successCriteria": ["how we measure success"],
-    "budget": "USD 50,000" or null,
-    "timeline": {
-      "startDate": "2025-10-12",
-      "targetEndDate": "2026-04-12"
-    }
-  },
-  "stages": [
-    {
-      "id": "stage_1",
-      "name": "Stage Name",
-      "order": 1,
-      "status": "not_started"
-    }
-  ],
-  "reasoning": "why this scope makes sense"
-}
-
-GUIDELINES FOR QUESTIONS:
-- Focus on project management essentials: timeline, budget, deliverables
-- Ask about target completion dates and milestones
-- Ask about budget and how funds will be allocated
-- Ask about key project constraints or requirements
-- Keep questions focused and actionable
-- Ask 2-3 questions maximum at a time
-
-GUIDELINES FOR SCOPE CREATION:
-- Create 3-6 project stages based on project type
-- Make stages logical and sequential
-- Set realistic timeline based on target date
-- Structure budget framework for allocation
-
-OUTPUT FORMAT:
-Return ONLY a single JSON object. Your response must be valid JSON that can be parsed directly.
-Start your response with { and end with }.
-
-CORRECT RESPONSE EXAMPLES:
-{"needsMoreInfo":true,"responseText":"When do you plan to complete this?\\nWhat is your budget?","reasoning":"need timeline and budget"}
-
-{"needsMoreInfo":false,"projectName":"Toy Store Launch","scope":{...},"stages":[...],"reasoning":"sufficient information provided"}`;
+CURRENT PROJECT CONTEXT:
+Project Name: ${projectData.name}
+Current Stages: ${JSON.stringify(projectData.stages, null, 2)}
+Current Scope: ${JSON.stringify(projectData.scope, null, 2)}`;
 
   try {
+    // ONE AI CALL with the focused prompt
     const response = await model.invoke([
-      { role: "system", content: systemPrompt },
+      { role: "system", content: contextualPrompt },
       ...messages, // Pass full conversation history
     ]);
 
-    // Parse response with defensive JSON extraction
+    // Parse response
     let scopeData;
     try {
       scopeData = parseResponseContent(response);
     } catch (e) {
-      // Defensive parsing: extract JSON from response even if there's extra text
-      console.log("⚠️ Initial parse failed, attempting defensive JSON extraction...");
+      console.error("❌ SCOPE AGENT JSON PARSE ERROR");
+      console.error("Parse error:", e.message);
+      console.error("Raw AI response:", response.content);
       
-      let contentStr = typeof response.content === 'string' 
-        ? response.content 
-        : JSON.stringify(response.content);
-      
-      // Find the first { and last }
-      const firstBrace = contentStr.indexOf('{');
-      const lastBrace = contentStr.lastIndexOf('}');
-      
-      if (firstBrace === -1 || lastBrace === -1 || firstBrace >= lastBrace) {
-        console.error("❌ SCOPE AGENT: No valid JSON object found in response");
-        console.error("Raw response:", contentStr);
-        throw new Error(
-          `Scope Agent failed to return valid JSON. ` +
-          `No JSON object found in response. ` +
-          `Response: ${contentStr.substring(0, 200)}...`
-        );
-      }
-      
-      // Extract just the JSON portion
-      const jsonStr = contentStr.substring(firstBrace, lastBrace + 1);
-      
-      try {
-        scopeData = JSON.parse(jsonStr);
-        console.log("✅ Successfully extracted JSON from response");
-      } catch (parseError) {
-        console.error("❌ SCOPE AGENT: Failed to parse extracted JSON");
-        console.error("Extracted JSON:", jsonStr);
-        console.error("Parse error:", parseError.message);
-        throw new Error(
-          `Scope Agent failed to parse JSON. ` +
-          `Parse error: ${parseError.message}. ` +
-          `Extracted: ${jsonStr.substring(0, 200)}...`
-        );
-      }
+      throw new Error(
+        `Scope Agent failed to return valid JSON. ` +
+        `Parse error: ${e.message}. ` +
+        `AI returned: ${response.content.substring(0, 200)}...`
+      );
     }
 
-    // CASE 1: Need more information - add questions to messages
+    // CASE 1: Need more information or asking for approval
     if (scopeData.needsMoreInfo === true) {
-      console.log(`❓ Scope agent needs more info, asking questions`);
+      console.log(`❓ Scope agent: ${scopeData.reasoning}`);
       
-      // Add the questions as an assistant message
-      const questionsMessage = {
+      // If stages were provided, update them
+      if (scopeData.stages && scopeData.stages.length > 0) {
+        projectData.stages = scopeData.stages;
+        await saveProjectData(projectId, projectData);
+        console.log(`📝 Updated project stages (${scopeData.stages.length} stages)`);
+      }
+      
+      // Add response to messages
+      const responseMessage = {
         role: "assistant",
         content: scopeData.responseText
       };
       
       return {
         ...state,
-        messages: [...messages, questionsMessage],
+        messages: [...messages, responseMessage],
         projectData: projectData,
+        scopeData: scopeData,
         next_agent: "end" // End workflow, wait for user response
       };
     }
 
-    // CASE 2: Have enough info - create full scope
+    // CASE 2: User approved - scope complete
     if (scopeData.needsMoreInfo === false && scopeData.scope) {
-      console.log(`✅ Scope agent has enough info, creating full scope`);
+      console.log(`✅ Scope agent: ${scopeData.reasoning}`);
       
-      // Update project data
+      // Update project data with complete scope
       projectData.scope = scopeData.scope;
       projectData.stages = scopeData.stages;
       projectData.status = 'active';

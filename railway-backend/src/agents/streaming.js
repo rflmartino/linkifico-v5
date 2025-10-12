@@ -1,11 +1,12 @@
 // railway-backend/src/agents/streaming.js
-// Streaming workflow that emits events as agents work
+// Streaming workflow that emits events with real AI reasoning
 
 import { pmGraph } from './graph.js';
 
 /**
  * Run workflow with streaming events
  * Emits events as each agent processes the request
+ * Now uses REAL AI reasoning from agents instead of hardcoded messages
  */
 export async function runStreamingWorkflow(userQuery, projectId, userId, onEvent) {
   console.log(`🌊 Starting STREAMING workflow for project: ${projectId}`);
@@ -27,7 +28,7 @@ export async function runStreamingWorkflow(userQuery, projectId, userId, onEvent
     // Small delay to let event be stored
     await new Promise(resolve => setTimeout(resolve, 100));
 
-    // Emit supervisor start
+    // Emit supervisor start - still hardcoded as supervisor doesn't have reasoning field
     onEvent({
       type: 'agent_start',
       agent: 'supervisor',
@@ -38,27 +39,41 @@ export async function runStreamingWorkflow(userQuery, projectId, userId, onEvent
 
     await new Promise(resolve => setTimeout(resolve, 200));
 
-    // Run the workflow (not streaming, but we'll emit events as if they're happening)
+    // Run the workflow (invoke returns final state after all agents complete)
     const finalState = await pmGraph.invoke(initialState);
 
-    // Extract which agents ran from the final state and emit events with delays
+    // Use REAL reasoning from supervisor if available
+    if (finalState.reasoning) {
+      onEvent({
+        type: 'agent_thinking',
+        agent: 'supervisor',
+        message: finalState.reasoning,
+        timestamp: new Date().toISOString()
+      });
+      await new Promise(resolve => setTimeout(resolve, 300));
+    }
+
+    // Extract which agents ran from the final state and emit events with REAL AI reasoning
     if (finalState.scopeData) {
       onEvent({
         type: 'agent_start',
         agent: 'scope',
-        message: '📋 Scope Agent: Starting project scope definition and analysis...',
+        message: '📋 Scope Agent: Analyzing project requirements...',
         icon: '📋',
         timestamp: new Date().toISOString()
       });
 
       await new Promise(resolve => setTimeout(resolve, 500));
 
-      onEvent({
-        type: 'agent_thinking',
-        agent: 'scope',
-        message: '🤔 Analyzing project requirements and defining scope...',
-        timestamp: new Date().toISOString()
-      });
+      // Use REAL AI reasoning from scope agent
+      if (finalState.scopeData.reasoning) {
+        onEvent({
+          type: 'agent_thinking',
+          agent: 'scope',
+          message: finalState.scopeData.reasoning,
+          timestamp: new Date().toISOString()
+        });
+      }
 
       await new Promise(resolve => setTimeout(resolve, 500));
 
@@ -77,10 +92,22 @@ export async function runStreamingWorkflow(userQuery, projectId, userId, onEvent
       onEvent({
         type: 'agent_start',
         agent: 'scheduler',
-        message: '📅 Scheduler Agent: Creating task breakdown and timeline...',
+        message: '📅 Scheduler Agent: Creating task breakdown...',
         icon: '📅',
         timestamp: new Date().toISOString()
       });
+
+      await new Promise(resolve => setTimeout(resolve, 500));
+
+      // Use REAL AI reasoning from scheduler agent
+      if (finalState.schedulerData.reasoning) {
+        onEvent({
+          type: 'agent_thinking',
+          agent: 'scheduler',
+          message: finalState.schedulerData.reasoning,
+          timestamp: new Date().toISOString()
+        });
+      }
 
       await new Promise(resolve => setTimeout(resolve, 500));
 
@@ -106,6 +133,18 @@ export async function runStreamingWorkflow(userQuery, projectId, userId, onEvent
 
       await new Promise(resolve => setTimeout(resolve, 500));
 
+      // Use REAL AI reasoning from task updater agent
+      if (finalState.updateData.reasoning) {
+        onEvent({
+          type: 'agent_thinking',
+          agent: 'taskUpdater',
+          message: finalState.updateData.reasoning,
+          timestamp: new Date().toISOString()
+        });
+      }
+
+      await new Promise(resolve => setTimeout(resolve, 500));
+
       onEvent({
         type: 'agent_complete',
         agent: 'taskUpdater',
@@ -128,6 +167,18 @@ export async function runStreamingWorkflow(userQuery, projectId, userId, onEvent
 
       await new Promise(resolve => setTimeout(resolve, 500));
 
+      // Use REAL AI reasoning from budget agent
+      if (finalState.budgetData.analysis) {
+        onEvent({
+          type: 'agent_thinking',
+          agent: 'budget',
+          message: finalState.budgetData.analysis,
+          timestamp: new Date().toISOString()
+        });
+      }
+
+      await new Promise(resolve => setTimeout(resolve, 500));
+
       onEvent({
         type: 'agent_complete',
         agent: 'budget',
@@ -143,10 +194,22 @@ export async function runStreamingWorkflow(userQuery, projectId, userId, onEvent
       onEvent({
         type: 'agent_start',
         agent: 'analyzer',
-        message: '🔍 Analyzer: Performing comprehensive project assessment...',
+        message: '🔍 Analyzer: Performing project assessment...',
         icon: '🔍',
         timestamp: new Date().toISOString()
       });
+
+      await new Promise(resolve => setTimeout(resolve, 500));
+
+      // Use REAL AI reasoning from analyzer agent
+      if (finalState.analysis.reasoning) {
+        onEvent({
+          type: 'agent_thinking',
+          agent: 'analyzer',
+          message: finalState.analysis.reasoning,
+          timestamp: new Date().toISOString()
+        });
+      }
 
       await new Promise(resolve => setTimeout(resolve, 500));
 
@@ -187,7 +250,7 @@ export async function runStreamingWorkflow(userQuery, projectId, userId, onEvent
 }
 
 /**
- * Get friendly messages for each agent
+ * Get friendly messages for each agent (kept for reference but less used now)
  */
 function getAgentMessage(agentName) {
   const messages = {
@@ -197,11 +260,11 @@ function getAgentMessage(agentName) {
     },
     scope: {
       icon: '📋',
-      start: '📋 Scope Agent: Starting project scope definition and analysis...'
+      start: '📋 Scope Agent: Analyzing project requirements...'
     },
     scheduler: {
       icon: '📅',
-      start: '📅 Scheduler Agent: Creating task breakdown and timeline...'
+      start: '📅 Scheduler Agent: Creating task breakdown...'
     },
     taskUpdater: {
       icon: '✏️',
@@ -213,7 +276,7 @@ function getAgentMessage(agentName) {
     },
     analyzer: {
       icon: '🔍',
-      start: '🔍 Analyzer: Performing comprehensive project assessment...'
+      start: '🔍 Analyzer: Performing project assessment...'
     }
   };
 
@@ -228,9 +291,8 @@ function getAgentMessage(agentName) {
  * 
  * - workflow_start: Workflow begins
  * - agent_start: An agent starts processing
+ * - agent_thinking: Agent's actual AI reasoning (NEW - uses real reasoning from agent)
  * - agent_complete: An agent finishes with results
- * - agent_routing: Supervisor is routing to next agent
  * - workflow_complete: Entire workflow finished
  * - workflow_error: An error occurred
  */
-
