@@ -42,7 +42,7 @@ RESPONSE FORMAT 2 - Have timeline AND budget (create stages):
 {
   "needsMoreInfo": true,
   "responseText": "I've created [X] stages for your [project type]:\\n\\n1. Stage Name - description\\n2. Stage Name - description\\n...\\n\\nReply 'yes' to proceed with detailed tasks and budget allocation.",
-  "reasoning": "presenting stages for approval",
+  "reasoning": "presenting stages for approval - waiting for user confirmation",
   "parsedInfo": {
     "projectType": "retail store opening",
     "timeline": "2024-12-01", 
@@ -115,7 +115,7 @@ STAGE GUIDELINES:
 
 Create 3-6 stages appropriate for the project type. Use \\n for newlines. Respond with ONLY valid JSON.`;
 
-// PROMPT 2: Modify stages or finalize scope
+// PROMPT 3: Modify stages or finalize scope
 const MODIFY_AND_APPROVE_PROMPT = `You are a Project Scope Definition Agent.
 
 Current mode: MODIFY STAGES OR FINALIZE SCOPE
@@ -131,7 +131,7 @@ Your job:
 RESPONSE FORMAT - Modify Stages:
 {
   "needsMoreInfo": true,
-  "responseText": "I've updated the stages:\\n\\n1. Stage Name\\n2. Stage Name\\n...\\n\\nAre you happy now?",
+  "responseText": "I've updated the stages:\\n\\n1. Stage Name\\n2. Stage Name\\n...\\n\\nReply 'yes' to proceed with detailed tasks and budget allocation.",
   "reasoning": "modified stages based on feedback",
   "stages": [
     {
@@ -173,10 +173,13 @@ RESPONSE FORMAT - User Approved:
 APPROVAL DETECTION:
 Look for: "yes", "looks good", "perfect", "approve", "proceed", "continue", "go ahead"
 
+MODIFICATION DETECTION:
+Look for: "change", "modify", "update", "different", "add", "remove", "no", "not happy", "don't like"
+
 GUIDELINES:
-- Modify stages based on user feedback
-- When user approves, create complete scope with objectives, deliverables, timeline, budget
-- Set needsMoreInfo: false only when user approves
+- If user wants modifications, update stages and set needsMoreInfo: true
+- If user approves, create complete scope and set needsMoreInfo: false
+- Always ask for confirmation after modifications
 
 Use \\n for newlines. Respond with ONLY valid JSON.`;
 
@@ -211,7 +214,7 @@ export async function scopeAgent(state) {
     console.log(`📋 Scope Agent Mode: GATHER_AND_CREATE`);
     systemPrompt = GATHER_AND_CREATE_PROMPT;
   } else if (hasStages && !hasScope) {
-    // Step 3: Modify stages or finalize scope
+    // Step 3: Handle user feedback on stages (approve or modify)
     console.log(`📋 Scope Agent Mode: MODIFY_AND_APPROVE`);
     systemPrompt = MODIFY_AND_APPROVE_PROMPT;
   } else {
@@ -345,29 +348,8 @@ Current Scope: ${JSON.stringify(projectData.scope, null, 2)}`;
       };
     }
 
-    // CASE 3: Stages created, waiting for approval (needsMoreInfo: false but no scope yet)
-    if (scopeData.needsMoreInfo === false && !scopeData.scope && scopeData.stages) {
-      console.log(`📋 Scope agent: ${scopeData.reasoning} - stages created, waiting for approval`);
-      
-      // Save stages and parsedInfo
-      if (scopeData.parsedInfo) {
-        projectData.parsedInfo = scopeData.parsedInfo;
-      }
-      if (scopeData.stages && scopeData.stages.length > 0) {
-        projectData.stages = scopeData.stages;
-      }
-      await saveProjectData(projectId, projectData);
 
-      return {
-        ...state,
-        messages: [...messages, { role: "assistant", content: scopeData.responseText }],
-        projectData: projectData,
-        scopeData: scopeData,
-        next_agent: "end"
-      };
-    }
-
-    // CASE 4: Unexpected format
+    // CASE 3: Unexpected format
     console.error("❌ Unexpected scope response format:", scopeData);
     console.error("❌ Type:", typeof scopeData);
     console.error("❌ Is Array:", Array.isArray(scopeData));

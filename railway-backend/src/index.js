@@ -77,33 +77,54 @@ const jobResults = new Map();
 function formatAiResponse(result) {
   let aiResponse = "I've analyzed your request and processed it.";
   
+  console.log(`🔍 Formatting AI response from result:`, {
+    hasScopeData: !!result.scopeData,
+    hasScope: !!result.scopeData?.scope,
+    hasResponseText: !!result.scopeData?.responseText,
+    hasStages: !!result.scopeData?.stages,
+    hasAnalysis: !!result.analysis,
+    hasDirectAnswer: !!result.direct_answer,
+    hasMessages: !!result.messages
+  });
+  
   if (result.scopeData) {
-    // Format a comprehensive response when scope is defined
-    const scope = result.scopeData.scope;
-    aiResponse = `✅ **Project Scope Defined**\n\n`;
-    
-    if (scope?.description) {
-      aiResponse += `**Overview:** ${scope.description}\n\n`;
-    }
-    
-    if (scope?.objectives && scope.objectives.length > 0) {
-      aiResponse += `**Objectives:**\n${scope.objectives.map(obj => `• ${obj}`).join('\n')}\n\n`;
-    }
-    
-    if (scope?.deliverables && scope.deliverables.length > 0) {
-      aiResponse += `**Key Deliverables:**\n${scope.deliverables.map(del => `• ${del}`).join('\n')}\n\n`;
-    }
-    
-    if (scope?.budget) {
-      aiResponse += `**Budget:** ${scope.budget}\n\n`;
-    }
-    
-    if (scope?.timeline) {
-      aiResponse += `**Timeline:** ${scope.timeline.startDate} to ${scope.timeline.targetEndDate}\n\n`;
-    }
-    
-    if (result.scopeData.stages && result.scopeData.stages.length > 0) {
-      aiResponse += `**Project Stages:**\n${result.scopeData.stages.map((stage, idx) => 
+    // Check if we have a complete scope or just stages created
+    if (result.scopeData.scope) {
+      // Format a comprehensive response when scope is fully defined
+      const scope = result.scopeData.scope;
+      aiResponse = `✅ **Project Scope Defined**\n\n`;
+      
+      if (scope?.description) {
+        aiResponse += `**Overview:** ${scope.description}\n\n`;
+      }
+      
+      if (scope?.objectives && scope.objectives.length > 0) {
+        aiResponse += `**Objectives:**\n${scope.objectives.map(obj => `• ${obj}`).join('\n')}\n\n`;
+      }
+      
+      if (scope?.deliverables && scope.deliverables.length > 0) {
+        aiResponse += `**Key Deliverables:**\n${scope.deliverables.map(del => `• ${del}`).join('\n')}\n\n`;
+      }
+      
+      if (scope?.budget) {
+        aiResponse += `**Budget:** ${scope.budget}\n\n`;
+      }
+      
+      if (scope?.timeline) {
+        aiResponse += `**Timeline:** ${scope.timeline.startDate} to ${scope.timeline.targetEndDate}\n\n`;
+      }
+      
+      if (result.scopeData.stages && result.scopeData.stages.length > 0) {
+        aiResponse += `**Project Stages:**\n${result.scopeData.stages.map((stage, idx) => 
+          `${idx + 1}. ${stage.name} (${stage.status})`
+        ).join('\n')}`;
+      }
+    } else if (result.scopeData.responseText) {
+      // Use the responseText when stages are created but scope not finalized
+      aiResponse = result.scopeData.responseText;
+    } else if (result.scopeData.stages && result.scopeData.stages.length > 0) {
+      // Fallback: format stages if no responseText
+      aiResponse = `**Project Stages Created:**\n${result.scopeData.stages.map((stage, idx) => 
         `${idx + 1}. ${stage.name} (${stage.status})`
       ).join('\n')}`;
     }
@@ -119,6 +140,8 @@ function formatAiResponse(result) {
       aiResponse = lastMsg.content;
     }
   }
+  
+  console.log(`🎯 Final formatted aiResponse (${aiResponse.length} chars):`, aiResponse.substring(0, 100) + '...');
   
   return aiResponse;
 }
