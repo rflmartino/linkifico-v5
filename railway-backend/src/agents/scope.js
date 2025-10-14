@@ -54,9 +54,21 @@ RESPONSE FORMAT 2 - Have timeline AND budget (create stages):
       "name": "Stage Name",
       "order": 1,
       "status": "not_started"
+    },
+    {
+      "id": "stage_2", 
+      "name": "Another Stage",
+      "order": 2,
+      "status": "not_started"
     }
   ]
 }
+
+CRITICAL JSON RULES:
+- Each stage object MUST have ALL 4 fields: id, name, order, status
+- No trailing commas after the last field in objects
+- All field names must be in double quotes
+- All string values must be in double quotes
 
 RULES:
 - If missing timeline OR budget → use Format 1
@@ -326,14 +338,36 @@ Current Scope: ${JSON.stringify(projectData.scope, null, 2)}`;
 
       return {
         ...state,
-        messages: [...messages, { role: "assistant", content: response.content }],
+        messages: [...messages, { role: "assistant", content: scopeData.responseText }],
         projectData: projectData,
         scopeData: scopeData,
         next_agent: "end"
       };
     }
 
-    // CASE 3: Unexpected format
+    // CASE 3: Stages created, waiting for approval (needsMoreInfo: false but no scope yet)
+    if (scopeData.needsMoreInfo === false && !scopeData.scope && scopeData.stages) {
+      console.log(`📋 Scope agent: ${scopeData.reasoning} - stages created, waiting for approval`);
+      
+      // Save stages and parsedInfo
+      if (scopeData.parsedInfo) {
+        projectData.parsedInfo = scopeData.parsedInfo;
+      }
+      if (scopeData.stages && scopeData.stages.length > 0) {
+        projectData.stages = scopeData.stages;
+      }
+      await saveProjectData(projectId, projectData);
+
+      return {
+        ...state,
+        messages: [...messages, { role: "assistant", content: scopeData.responseText }],
+        projectData: projectData,
+        scopeData: scopeData,
+        next_agent: "end"
+      };
+    }
+
+    // CASE 4: Unexpected format
     console.error("❌ Unexpected scope response format:", scopeData);
     console.error("❌ Type:", typeof scopeData);
     console.error("❌ Is Array:", Array.isArray(scopeData));
