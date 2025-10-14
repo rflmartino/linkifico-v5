@@ -336,8 +336,8 @@ app.post('/api/process-message-job', async (req, res) => {
     const latestProjectData = await getProjectData(projectId);
     const finalProjectData = result.projectData || latestProjectData || projectData;
 
-    // Return the result
-    res.json({ 
+    // Log final response data being sent to Wix
+    const finalResponse = {
       success: true,
       result: {
         aiResponse: formatAiResponse(result),
@@ -350,7 +350,15 @@ app.post('/api/process-message-job', async (req, res) => {
         updateData: result.updateData,
         budgetData: result.budgetData
       }
-    });
+    };
+
+    console.log(`📤 FINAL RESPONSE TO WIX (Message Job ${job.id}):`);
+    console.log(`📊 Project Data:`, JSON.stringify(finalProjectData, null, 2));
+    console.log(`🤖 AI Response:`, finalResponse.result.aiResponse);
+    console.log(`📋 Full Result Keys:`, Object.keys(finalResponse.result));
+    console.log(`📦 Response Size: ${JSON.stringify(finalResponse).length} characters`);
+
+    res.json(finalResponse);
 
   } catch (error) {
     console.error('❌ Process message job failed:', error);
@@ -387,7 +395,8 @@ app.post('/api/process-init-job', async (req, res) => {
     const latestProjectData = await getProjectData(projectId);
     const finalProjectData = result.projectData || latestProjectData || projectData;
 
-    res.json({ 
+    // Log final response data being sent to Wix
+    const finalResponse = {
       success: true,
       result: {
         message: formatAiResponse(result),
@@ -396,7 +405,15 @@ app.post('/api/process-init-job', async (req, res) => {
         projectEmail: finalProjectData?.email || '',
         analysis: result.analysis
       }
-    });
+    };
+
+    console.log(`📤 FINAL RESPONSE TO WIX (Init Job ${job.id}):`);
+    console.log(`📊 Project Data:`, JSON.stringify(finalProjectData, null, 2));
+    console.log(`🤖 AI Response:`, finalResponse.result.message);
+    console.log(`📋 Full Result Keys:`, Object.keys(finalResponse.result));
+    console.log(`📦 Response Size: ${JSON.stringify(finalResponse).length} characters`);
+
+    res.json(finalResponse);
 
   } catch (error) {
     console.error('❌ Process init job failed:', error);
@@ -434,7 +451,8 @@ app.post('/api/process-analyze-job', async (req, res) => {
 
     const finalProjectData = result.projectData || projectData;
 
-    res.json({ 
+    // Log final response data being sent to Wix
+    const finalResponse = {
       success: true,
       result: {
         message: formatAiResponse(result),
@@ -443,7 +461,16 @@ app.post('/api/process-analyze-job', async (req, res) => {
         projectName: finalProjectData?.name || 'New Project',
         projectEmail: finalProjectData?.email || ''
       }
-    });
+    };
+
+    console.log(`📤 FINAL RESPONSE TO WIX (Analyze Job ${job.id}):`);
+    console.log(`📊 Project Data:`, JSON.stringify(finalProjectData, null, 2));
+    console.log(`🤖 AI Response:`, finalResponse.result.message);
+    console.log(`📊 Analysis:`, JSON.stringify(result.analysis, null, 2));
+    console.log(`📋 Full Result Keys:`, Object.keys(finalResponse.result));
+    console.log(`📦 Response Size: ${JSON.stringify(finalResponse).length} characters`);
+
+    res.json(finalResponse);
 
   } catch (error) {
     console.error('❌ Process analyze job failed:', error);
@@ -480,13 +507,22 @@ app.post('/api/analyze-project', async (req, res) => {
 
     console.log('✅ Workflow complete');
 
-    res.json({ 
+    // Log final response data being sent to Wix (Legacy endpoint)
+    const finalResponse = {
       success: true,
       result: result,
       analysis: result.analysis,
       reasoning: result.reasoning,
       messages: result.messages
-    });
+    };
+
+    console.log(`📤 FINAL RESPONSE TO WIX (Legacy Analyze Project):`);
+    console.log(`📊 Full Result:`, JSON.stringify(result, null, 2));
+    console.log(`📊 Analysis:`, JSON.stringify(result.analysis, null, 2));
+    console.log(`📋 Response Keys:`, Object.keys(finalResponse));
+    console.log(`📦 Response Size: ${JSON.stringify(finalResponse).length} characters`);
+
+    res.json(finalResponse);
 
   } catch (error) {
     console.error('❌ Analysis failed:', error);

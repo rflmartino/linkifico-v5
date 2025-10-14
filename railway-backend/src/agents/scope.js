@@ -11,36 +11,56 @@ const model = new ChatAnthropic({
   anthropicApiKey: process.env.ANTHROPIC_API_KEY,
 });
 
-// PROMPT 1: Gather info and create stages
-const GATHER_AND_CREATE_PROMPT = `You are a Project Scope Definition Agent for project management.
+// PROMPT 1: Parse conversation and validate info
+const PARSE_AND_VALIDATE_PROMPT = `You are a Project Scope Definition Agent.
 
-Current mode: GATHER INFO AND CREATE STAGES
+Current mode: PARSE CONVERSATION AND VALIDATE INFO
 
-WORKFLOW:
-1. Check conversation history - what project type did user mention?
-2. Do you have timeline and budget? 
-   - NO → Ask for them
-   - YES → Create stages immediately
+EXTRACTION RULES:
+- Project Type: Look for "toy store", "restaurant", "website", "app", "event", "construction", "marketing", etc.
+- Timeline: Look for "ready by [date]", "deadline [date]", "finish by [date]", "need by [date]"
+- Budget: Look for "budget of [amount]", "have [amount] dollars", "cost [amount]", "spend [amount]"
 
-INFORMATION YOU NEED:
-- Target completion date
-- Total budget
+EXAMPLES:
+- "toy store in mall" → projectType: "retail store opening"
+- "ready by December 1st" → timeline: "2024-12-01"
+- "budget of 30000 dollars" → budget: "$30,000"
 
-RESPONSE FORMAT 1 - Missing timeline or budget:
+RESPONSE FORMAT:
 {
   "needsMoreInfo": true,
   "responseText": "I'll create your [project type] project plan. I need:\\n\\n1. Target completion date?\\n2. Total budget?",
-  "reasoning": "missing timeline and/or budget"
+  "reasoning": "missing timeline and/or budget",
+  "parsedInfo": {
+    "projectType": "retail store opening" | "NOT FOUND",
+    "timeline": "2024-12-01" | "NOT FOUND", 
+    "budget": "$30,000" | "NOT FOUND"
+  }
 }
 
-RESPONSE FORMAT 2 - Have timeline AND budget:
+RULES:
+- If missing timeline OR budget → ask for them
+- If you have timeline AND budget → create stages immediately (include stages array)
+- Always fill parsedInfo to show what you extracted
+- Use "NOT FOUND" for missing information
+
+Respond with ONLY valid JSON.`;
+
+// PROMPT 2: Create stages (info already validated)
+const GATHER_AND_CREATE_PROMPT = `You are a Project Scope Definition Agent.
+
+Current mode: CREATE STAGES (info already validated)
+
+You have confirmed project type, timeline, and budget. Create appropriate stages.
+
+RESPONSE FORMAT:
 {
   "needsMoreInfo": true,
   "responseText": "I've created [X] stages for your [project type]:\\n\\n1. Stage Name - description\\n2. Stage Name - description\\n...\\n\\nReply 'yes' to proceed with detailed tasks and budget allocation.",
   "reasoning": "presenting stages for approval",
   "stages": [
     {
-      "id": "stage_1",
+      "id": "stage_1", 
       "name": "Stage Name",
       "order": 1,
       "status": "not_started"
@@ -48,13 +68,13 @@ RESPONSE FORMAT 2 - Have timeline AND budget:
   ]
 }
 
-CRITICAL:
-- Review ALL messages to find project type
-- When you have timeline + budget, immediately create stages (Format 2)
-- stages array is REQUIRED in Format 2
-- Create 3-6 stages appropriate for the project type
+STAGE GUIDELINES:
+- Retail stores: Planning, Setup, Inventory, Marketing, Launch
+- Software projects: Planning, Development, Testing, Deployment, Launch
+- Events: Planning, Logistics, Marketing, Setup, Execution
+- Construction: Planning, Permits, Construction, Inspection, Completion
 
-Use \\n for newlines. Respond with ONLY valid JSON.`;
+Create 3-6 stages appropriate for the project type. Use \\n for newlines. Respond with ONLY valid JSON.`;
 
 // PROMPT 2: Modify stages or finalize scope
 const MODIFY_AND_APPROVE_PROMPT = `You are a Project Scope Definition Agent.
@@ -138,13 +158,21 @@ export async function scopeAgent(state) {
   let systemPrompt;
   const hasStages = projectData.stages && projectData.stages.length > 0;
   const hasScope = projectData.scope && projectData.scope.description;
+  const hasParsedInfo = projectData.parsedInfo && 
+                       projectData.parsedInfo.projectType !== "NOT FOUND" &&
+                       projectData.parsedInfo.timeline !== "NOT FOUND" &&
+                       projectData.parsedInfo.budget !== "NOT FOUND";
 
-  if (!hasStages) {
-    // No stages yet - gather info and create stages
+  if (!hasParsedInfo) {
+    // Step 1: Parse conversation and extract project info
+    console.log(`📋 Scope Agent Mode: PARSE_AND_VALIDATE`);
+    systemPrompt = PARSE_AND_VALIDATE_PROMPT;
+  } else if (hasParsedInfo && !hasStages) {
+    // Step 2: Create stages (we have all info needed)
     console.log(`📋 Scope Agent Mode: GATHER_AND_CREATE`);
     systemPrompt = GATHER_AND_CREATE_PROMPT;
   } else if (hasStages && !hasScope) {
-    // Stages exist but scope not finalized - modify or approve
+    // Step 3: Modify stages or finalize scope
     console.log(`📋 Scope Agent Mode: MODIFY_AND_APPROVE`);
     systemPrompt = MODIFY_AND_APPROVE_PROMPT;
   } else {
@@ -165,6 +193,7 @@ export async function scopeAgent(state) {
 
 CURRENT PROJECT CONTEXT:
 Project Name: ${projectData.name}
+Current Parsed Info: ${JSON.stringify(projectData.parsedInfo, null, 2)}
 Current Stages: ${JSON.stringify(projectData.stages, null, 2)}
 Current Scope: ${JSON.stringify(projectData.scope, null, 2)}`;
 
@@ -217,12 +246,20 @@ Current Scope: ${JSON.stringify(projectData.scope, null, 2)}`;
     if (scopeData.needsMoreInfo === true) {
       console.log(`❓ Scope agent: ${scopeData.reasoning}`);
       
+      // If parsedInfo was provided, save it
+      if (scopeData.parsedInfo) {
+        projectData.parsedInfo = scopeData.parsedInfo;
+        console.log(`📝 Updated parsedInfo:`, scopeData.parsedInfo);
+      }
+      
       // If stages were provided, update them
       if (scopeData.stages && scopeData.stages.length > 0) {
         projectData.stages = scopeData.stages;
-        await saveProjectData(projectId, projectData);
         console.log(`📝 Updated project stages (${scopeData.stages.length} stages)`);
       }
+      
+      // Save updated project data
+      await saveProjectData(projectId, projectData);
       
       // Add response to messages
       const responseMessage = {
