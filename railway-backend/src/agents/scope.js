@@ -26,7 +26,7 @@ EXAMPLES:
 - "ready by December 1st" → timeline: "2024-12-01"
 - "budget of 30000 dollars" → budget: "$30,000"
 
-RESPONSE FORMAT:
+RESPONSE FORMAT 1 - Missing timeline or budget:
 {
   "needsMoreInfo": true,
   "responseText": "I'll create your [project type] project plan. I need:\\n\\n1. Target completion date?\\n2. Total budget?",
@@ -38,11 +38,38 @@ RESPONSE FORMAT:
   }
 }
 
+RESPONSE FORMAT 2 - Have timeline AND budget (create stages):
+{
+  "needsMoreInfo": true,
+  "responseText": "I've created [X] stages for your [project type]:\\n\\n1. Stage Name - description\\n2. Stage Name - description\\n...\\n\\nReply 'yes' to proceed with detailed tasks and budget allocation.",
+  "reasoning": "presenting stages for approval",
+  "parsedInfo": {
+    "projectType": "retail store opening",
+    "timeline": "2024-12-01", 
+    "budget": "$30,000"
+  },
+  "stages": [
+    {
+      "id": "stage_1",
+      "name": "Stage Name",
+      "order": 1,
+      "status": "not_started"
+    }
+  ]
+}
+
 RULES:
-- If missing timeline OR budget → ask for them
-- If you have timeline AND budget → create stages immediately (include stages array)
+- If missing timeline OR budget → use Format 1
+- If you have timeline AND budget → use Format 2 (include stages array)
 - Always fill parsedInfo to show what you extracted
 - Use "NOT FOUND" for missing information
+- Create 3-6 stages appropriate for the project type
+
+STAGE GUIDELINES:
+- Retail stores: Planning, Location Selection, Store Design, Inventory, Setup, Launch
+- Software projects: Planning, Development, Testing, Deployment, Launch
+- Events: Planning, Logistics, Marketing, Setup, Execution
+- Construction: Planning, Permits, Construction, Inspection, Completion
 
 Respond with ONLY valid JSON.`;
 
@@ -210,7 +237,9 @@ Current Scope: ${JSON.stringify(projectData.scope, null, 2)}`;
     // Parse response
     let scopeData;
     try {
+      console.log(`📨 Scope agent raw response:`, typeof response.content, response.content);
       scopeData = parseResponseContent(response);
+      console.log(`✅ Scope agent parsed response:`, scopeData);
     } catch (e) {
       console.error("❌ SCOPE AGENT JSON PARSE ERROR");
       console.error("Parse error:", e.message);
