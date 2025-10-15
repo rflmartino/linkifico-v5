@@ -14,6 +14,9 @@ export async function supervisorAgent(state) {
   const hasScope = projectData?.scope && projectData.scope.description;
   const hasTasks = projectData?.tasks && projectData.tasks.length > 0;
   
+  // Check if scope agent just completed work (has stages but no scope yet)
+  const scopeWorkComplete = hasStages && !hasScope && state.scopeData;
+  
   let workflowState = "INITIAL";
   if (!hasStages && !hasScope) {
     workflowState = "NEEDS_SCOPE";
@@ -23,6 +26,17 @@ export async function supervisorAgent(state) {
     workflowState = "NEEDS_TASKS";
   } else {
     workflowState = "ACTIVE";
+  }
+
+  // Special case: If scope work just completed, end the workflow
+  if (scopeWorkComplete) {
+    console.log(`✅ Supervisor: Scope work completed, ending workflow`);
+    return {
+      ...state,
+      messages: messages,
+      next_agent: "end",
+      reasoning: "Scope work completed - stages created, waiting for user approval"
+    };
   }
 
   const systemPrompt = `You are a Project Management Supervisor Agent.
@@ -50,6 +64,7 @@ Current project state:
 - Has stages: ${hasStages}
 - Has scope: ${hasScope}
 - Has tasks: ${hasTasks}
+- Scope work complete: ${scopeWorkComplete}
 Project data: ${JSON.stringify(projectData || {}, null, 2)}
 
 ROUTING LOGIC:

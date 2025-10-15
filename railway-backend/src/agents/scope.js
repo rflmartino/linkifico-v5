@@ -316,7 +316,7 @@ Current Scope: ${JSON.stringify(projectData.scope, null, 2)}`;
         messages: [...messages, responseMessage],
         projectData: projectData,
         scopeData: scopeData,
-        next_agent: "end" // End workflow, wait for user response
+        next_agent: "supervisor" // Return to supervisor to properly end workflow
       };
     }
 
@@ -344,7 +344,7 @@ Current Scope: ${JSON.stringify(projectData.scope, null, 2)}`;
         messages: [...messages, { role: "assistant", content: scopeData.responseText }],
         projectData: projectData,
         scopeData: scopeData,
-        next_agent: "end"
+        next_agent: "supervisor"
       };
     }
 

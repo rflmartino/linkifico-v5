@@ -222,6 +222,10 @@ async function processWorkflowWithRedis(streamId, query, projectId, userId) {
           }
           
           console.log(`✅ Scope complete: ${aiResponse.substring(0, 100)}...`);
+        } else if (finalState.scopeData.responseText) {
+          // Agent provided responseText but no scope (stages created, waiting for approval)
+          aiResponse = finalState.scopeData.responseText;
+          console.log(`📋 Scope agent stages created: ${aiResponse.substring(0, 100)}...`);
         } else {
           // Fallback - shouldn't happen but just in case
           console.warn(`⚠️ scopeData exists but no responseText or scope found`);
@@ -231,12 +235,16 @@ async function processWorkflowWithRedis(streamId, query, projectId, userId) {
       } else if (finalState.direct_answer) {
         aiResponse = finalState.direct_answer;
       } else if (finalState.messages && finalState.messages.length > 0) {
-        const lastMsg = finalState.messages[finalState.messages.length - 1];
-        if (lastMsg.role === 'assistant' && lastMsg.content) {
-          aiResponse = lastMsg.content;
-          console.log(`📝 Using message content as aiResponse: ${aiResponse.substring(0, 100)}...`);
+        // Find the last assistant message
+        const assistantMessages = finalState.messages.filter(msg => msg.role === 'assistant');
+        const lastAssistantMsg = assistantMessages[assistantMessages.length - 1];
+        
+        if (lastAssistantMsg && lastAssistantMsg.content) {
+          aiResponse = lastAssistantMsg.content;
+          console.log(`📝 Using assistant message content as aiResponse: ${aiResponse.substring(0, 100)}...`);
         } else {
           console.warn(`⚠️ Last message exists but no assistant content found`);
+          console.warn(`⚠️ Messages: ${finalState.messages.map(m => ({ role: m.role, hasContent: !!m.content }))}`);
         }
       } else {
         console.warn(`⚠️ No scopeData, analysis, direct_answer, or messages found in finalState`);
