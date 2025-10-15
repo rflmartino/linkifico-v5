@@ -69,6 +69,9 @@ CRITICAL JSON RULES:
 - No trailing commas after the last field in objects
 - All field names must be in double quotes
 - All string values must be in double quotes
+- NEVER use JavaScript string concatenation (like "text" + '\n' + "more text")
+- Use actual newlines (\n) in string values, not concatenation
+- Return ONLY valid JSON, not JavaScript object notation
 
 RULES:
 - If missing timeline OR budget → use Format 1
@@ -83,7 +86,7 @@ STAGE GUIDELINES:
 - Events: Planning, Logistics, Marketing, Setup, Execution
 - Construction: Planning, Permits, Construction, Inspection, Completion
 
-Respond with ONLY valid JSON.`;
+IMPORTANT: Return ONLY valid JSON. Do not use JavaScript object notation or string concatenation.`;
 
 // PROMPT 2: Create stages (info already validated)
 const GATHER_AND_CREATE_PROMPT = `You are a Project Scope Definition Agent.
@@ -113,7 +116,9 @@ STAGE GUIDELINES:
 - Events: Planning, Logistics, Marketing, Setup, Execution
 - Construction: Planning, Permits, Construction, Inspection, Completion
 
-Create 3-6 stages appropriate for the project type. Use \\n for newlines. Respond with ONLY valid JSON.`;
+Create 3-6 stages appropriate for the project type. Use \\n for newlines in strings. 
+
+IMPORTANT: Return ONLY valid JSON. Do not use JavaScript object notation or string concatenation.`;
 
 // PROMPT 3: Modify stages or finalize scope
 const MODIFY_AND_APPROVE_PROMPT = `You are a Project Scope Definition Agent.
@@ -181,7 +186,9 @@ GUIDELINES:
 - If user approves, create complete scope and set needsMoreInfo: false
 - Always ask for confirmation after modifications
 
-Use \\n for newlines. Respond with ONLY valid JSON.`;
+Use \\n for newlines in strings. 
+
+IMPORTANT: Return ONLY valid JSON. Do not use JavaScript object notation or string concatenation.`;
 
 export async function scopeAgent(state) {
   const { messages, projectId, userId } = state;
@@ -303,11 +310,29 @@ Current Scope: ${JSON.stringify(projectData.scope, null, 2)}`;
         ? response.content 
         : JSON.stringify(response.content);
       
-      throw new Error(
-        `Scope Agent failed to return valid JSON. ` +
-        `Parse error: ${e.message}. ` +
-        `AI returned: ${contentStr.substring(0, 200)}...`
-      );
+      // Log the problematic content for debugging
+      console.error("❌ Problematic content (first 500 chars):", contentStr.substring(0, 500));
+      console.error("❌ Content length:", contentStr.length);
+      
+      // Try to provide a more helpful error message
+      let errorMessage = "I encountered an issue processing your request. ";
+      if (contentStr.includes('+') && contentStr.includes("'")) {
+        errorMessage += "There was a formatting error in my response. Please try again.";
+      } else if (contentStr.includes('undefined') || contentStr.includes('null')) {
+        errorMessage += "I received incomplete information. Please try again.";
+      } else {
+        errorMessage += "Please try rephrasing your request.";
+      }
+      
+      return {
+        ...state,
+        messages: [...messages, { 
+          role: "assistant", 
+          content: errorMessage 
+        }],
+        next_agent: "supervisor",
+        error: `JSON parse error: ${e.message}`
+      };
     }
 
     // CASE 1: Need more information or asking for approval

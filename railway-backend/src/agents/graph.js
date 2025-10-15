@@ -11,7 +11,7 @@ import { budgetAgent } from "./budget.js";
 // Define the state structure
 const graphState = {
   messages: {
-    value: (x, y) => x.concat(y),
+    value: (x, y) => y, // Just use the new array - agents already build complete message history
     default: () => [],
   },
   projectId: {
