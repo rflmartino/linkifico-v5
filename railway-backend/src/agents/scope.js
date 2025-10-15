@@ -254,6 +254,30 @@ Current Scope: ${JSON.stringify(projectData.scope, null, 2)}`;
     try {
       console.log(`📨 Scope agent raw response:`, typeof response.content, response.content);
       scopeData = parseResponseContent(response);
+      
+      // Validate the parsed JSON structure
+      if (!scopeData || typeof scopeData !== 'object') {
+        throw new Error("Parsed response is not an object");
+      }
+      
+      // Validate required fields
+      if (typeof scopeData.needsMoreInfo !== 'boolean') {
+        throw new Error("Missing or invalid needsMoreInfo field");
+      }
+      
+      if (!scopeData.responseText || typeof scopeData.responseText !== 'string') {
+        throw new Error("Missing or invalid responseText field");
+      }
+      
+      // Validate stages if present
+      if (scopeData.stages && Array.isArray(scopeData.stages)) {
+        for (const stage of scopeData.stages) {
+          if (!stage.id || !stage.name || typeof stage.order !== 'number' || !stage.status) {
+            throw new Error(`Invalid stage structure: ${JSON.stringify(stage)}`);
+          }
+        }
+      }
+      
       console.log(`✅ Scope agent parsed response:`, scopeData);
     } catch (e) {
       console.error("❌ SCOPE AGENT JSON PARSE ERROR");
@@ -270,7 +294,7 @@ Current Scope: ${JSON.stringify(projectData.scope, null, 2)}`;
             role: "assistant", 
             content: "I encountered an API error. Please try again." 
           }],
-          next_agent: "end",
+          next_agent: "supervisor",
           error: "Claude API returned empty response"
         };
       }

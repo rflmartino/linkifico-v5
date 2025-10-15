@@ -73,22 +73,36 @@ workflow.addNode("scheduler", schedulerAgent);
 workflow.addNode("taskUpdater", taskUpdaterAgent);
 workflow.addNode("budget", budgetAgent);
 
+// Add end node that preserves state
+workflow.addNode("end", (state) => {
+  console.log(`🏁 End node reached, preserving final state`);
+  console.log(`🔍 End node state check:`);
+  console.log(`   - Has scopeData: ${!!state.scopeData}`);
+  console.log(`   - Has messages: ${!!state.messages}, length: ${state.messages?.length || 0}`);
+  return state; // Return state unchanged to preserve all data
+});
+
 // Define routing logic from supervisor
 function routeFromSupervisor(state) {
   const nextAgent = state.next_agent;
   
   console.log(`🔀 Routing from supervisor to: ${nextAgent}`);
   
-  if (!nextAgent || nextAgent === "end" || nextAgent === "supervisor") {
-    console.log(`⚠️ Invalid or end routing: ${nextAgent}, ending workflow`);
-    return END;
+  if (!nextAgent || nextAgent === "end") {
+    console.log(`🏁 Routing to end node: ${nextAgent}`);
+    return "end";
+  }
+  
+  if (nextAgent === "supervisor") {
+    console.log(`⚠️ Invalid routing: ${nextAgent}, ending workflow`);
+    return "end";
   }
   
   // Validate it's a known agent
   const validAgents = ["analyzer", "scope", "scheduler", "taskUpdater", "budget"];
   if (!validAgents.includes(nextAgent)) {
     console.log(`⚠️ Unknown agent: ${nextAgent}, ending workflow`);
-    return END;
+    return "end";
   }
   
   return nextAgent;
@@ -114,23 +128,23 @@ function routeFromAgent(state) {
 // All agents can either return to supervisor or end
 workflow.addConditionalEdges("analyzer", routeFromAgent, {
   supervisor: "supervisor",
-  end: END,
+  end: "end",
 });
 workflow.addConditionalEdges("scope", routeFromAgent, {
   supervisor: "supervisor",
-  end: END,
+  end: "end",
 });
 workflow.addConditionalEdges("scheduler", routeFromAgent, {
   supervisor: "supervisor",
-  end: END,
+  end: "end",
 });
 workflow.addConditionalEdges("taskUpdater", routeFromAgent, {
   supervisor: "supervisor",
-  end: END,
+  end: "end",
 });
 workflow.addConditionalEdges("budget", routeFromAgent, {
   supervisor: "supervisor",
-  end: END,
+  end: "end",
 });
 
 // Supervisor routes to agents or ends
@@ -140,7 +154,7 @@ workflow.addConditionalEdges("supervisor", routeFromSupervisor, [
   "scheduler",
   "taskUpdater",
   "budget",
-  END,
+  "end",
 ]);
 
 // Set entry point

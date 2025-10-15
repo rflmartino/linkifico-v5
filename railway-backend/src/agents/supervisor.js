@@ -31,6 +31,11 @@ export async function supervisorAgent(state) {
   // Special case: If scope work just completed, end the workflow
   if (scopeWorkComplete) {
     console.log(`✅ Supervisor: Scope work completed, ending workflow`);
+    console.log(`🔍 Supervisor state preservation check:`);
+    console.log(`   - Has scopeData: ${!!state.scopeData}`);
+    console.log(`   - Has messages: ${!!state.messages}, length: ${state.messages?.length || 0}`);
+    console.log(`   - Has projectData: ${!!state.projectData}`);
+    
     return {
       ...state,
       messages: messages,

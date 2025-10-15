@@ -180,6 +180,11 @@ async function processWorkflowWithRedis(streamId, query, projectId, userId) {
       console.log(`   - Has analysis: ${!!finalState.analysis}`);
       console.log(`   - Has direct_answer: ${!!finalState.direct_answer}`);
       console.log(`   - Has messages: ${!!finalState.messages}, length: ${finalState.messages?.length || 0}`);
+      console.log(`   - finalState keys: ${Object.keys(finalState || {})}`);
+      
+      if (finalState.scopeData) {
+        console.log(`   - scopeData structure: ${JSON.stringify(Object.keys(finalState.scopeData))}`);
+      }
       
       // Create AI response from the workflow results
       let aiResponse = "I've analyzed your project and created the initial structure.";
@@ -244,7 +249,7 @@ async function processWorkflowWithRedis(streamId, query, projectId, userId) {
           console.log(`📝 Using assistant message content as aiResponse: ${aiResponse.substring(0, 100)}...`);
         } else {
           console.warn(`⚠️ Last message exists but no assistant content found`);
-          console.warn(`⚠️ Messages: ${finalState.messages.map(m => ({ role: m.role, hasContent: !!m.content }))}`);
+          console.warn(`⚠️ Messages: ${JSON.stringify(finalState.messages.map(m => ({ role: m.role, hasContent: !!m.content, contentPreview: m.content?.substring(0, 50) })), null, 2)}`);
         }
       } else {
         console.warn(`⚠️ No scopeData, analysis, direct_answer, or messages found in finalState`);
